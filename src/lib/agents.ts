@@ -200,6 +200,11 @@ export const behavioralTopicAgent = new RealtimeAgent({
   handoffs: [closingAgent],
 });
 
+// Topic agents need cross-handoffs: get_next_question can suggest
+// transferring to the other topic agent, so each must know about the other.
+technicalTopicAgent.handoffs = [behavioralTopicAgent, closingAgent];
+behavioralTopicAgent.handoffs = [technicalTopicAgent, closingAgent];
+
 export const interviewAgent = new RealtimeAgent({
   name: "InterviewAgent",
   instructions: `あなたはプロフェッショナルなインタビュアーです。自動インタビューモードで動作しています。

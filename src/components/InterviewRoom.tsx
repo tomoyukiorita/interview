@@ -94,36 +94,17 @@ export function InterviewRoom({
   }, [mode, scenarioId, sessionActions, analysisActions]);
 
   const handleDisconnect = useCallback(async () => {
-    const fullAudioHistory = analysisActions.getSaveHistory();
     analysisActions.stopAnalysis();
 
-    if (enrichedTranscript.length > 0) {
-      try {
-        await fetch("/api/results", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: `interview-${Date.now()}`,
-            scenario: scenarioId,
-            mode,
-            startedAt: startTime,
-            endedAt: Date.now(),
-            transcript: enrichedTranscript,
-            audioAnalysis: fullAudioHistory,
-          }),
-        });
-      } catch (err) {
-        console.error("Failed to save results:", err);
-      }
-    }
+    // TODO: DB導入後に結果保存を有効化する
+    // const fullAudioHistory = analysisActions.getSaveHistory();
+    // if (enrichedTranscript.length > 0) {
+    //   await fetch("/api/results", { ... });
+    // }
 
     sessionActions.disconnect();
     onEnd();
   }, [
-    enrichedTranscript,
-    scenarioId,
-    mode,
-    startTime,
     sessionActions,
     analysisActions,
     onEnd,
