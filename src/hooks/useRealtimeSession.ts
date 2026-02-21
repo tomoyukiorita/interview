@@ -216,8 +216,7 @@ export function useRealtimeSession(): [
           audioElement,
         });
 
-        const transcriptionModel =
-          mode === "support" ? "gpt-4o-transcribe-diarize" : "gpt-4o-transcribe";
+        const transcriptionModel = "gpt-4o-transcribe";
 
         const session = new RealtimeSession(agent, {
           model: "gpt-realtime",
@@ -258,46 +257,46 @@ export function useRealtimeSession(): [
         });
 
         if (mode === "support") {
-          // In support mode, use transport-level events for diarized segments.
-          // The transport's datachannel receives raw Realtime API server events.
-          // We intercept `conversation.item.input_audio_transcription.segment`
-          // events to get speaker-labeled transcript segments.
-          const origOn = transport.on?.bind(transport);
-          if (origOn) {
-            origOn("*", (event: Record<string, unknown>) => {
-              if (
-                event.type ===
-                "conversation.item.input_audio_transcription.segment"
-              ) {
-                const seg = event as unknown as DiarizeSegment;
-                if (processedSegmentIds.current.has(seg.id)) return;
-                processedSegmentIds.current.add(seg.id);
+          // In support mode, try to capture diarized segments from the
+          // transport's datachannel. If the API provides speaker labels
+          // we use them; otherwise fall back to standard history.
+          try {
+            const origOn = transport.on?.bind(transport);
+            if (origOn) {
+              origOn("*", (event: Record<string, unknown>) => {
+                if (
+                  event.type ===
+                  "conversation.item.input_audio_transcription.segment"
+                ) {
+                  const seg = event as unknown as DiarizeSegment;
+                  if (processedSegmentIds.current.has(seg.id)) return;
+                  processedSegmentIds.current.add(seg.id);
 
-                if (!seg.text?.trim()) return;
+                  if (!seg.text?.trim()) return;
 
-                const role = mapSpeakerToRole(seg.speaker);
-                const entry: TranscriptEntry = {
-                  id: `seg-${seg.id}`,
-                  role,
-                  text: seg.text.trim(),
-                  timestamp: Date.now(),
-                  speaker: seg.speaker,
-                };
+                  const role = mapSpeakerToRole(seg.speaker);
+                  const entry: TranscriptEntry = {
+                    id: `seg-${seg.id}`,
+                    role,
+                    text: seg.text.trim(),
+                    timestamp: Date.now(),
+                    speaker: seg.speaker,
+                  };
 
-                setState((prev) => ({
-                  ...prev,
-                  transcript: [...prev.transcript, entry],
-                }));
-              }
-            });
+                  setState((prev) => ({
+                    ...prev,
+                    transcript: [...prev.transcript, entry],
+                  }));
+                }
+              });
+            }
+          } catch (e) {
+            console.warn("Transport wildcard listener not supported:", e);
           }
 
-          // Also handle history for non-diarized fallback
           session.on("history_added", (item) => {
             if (processedItemIds.current.has(item.itemId)) return;
             processedItemIds.current.add(item.itemId);
-            // In support mode, diarization segments are the primary source.
-            // Skip standard history if segments are flowing.
             if (processedSegmentIds.current.size > 0) return;
 
             const entry = extractTranscriptFromItem(item, mode);
@@ -380,15 +379,25 @@ export function useRealtimeSession(): [
           setState((prev) => ({ ...prev, isSpeaking: true }));
         });
 
-        session.on("error", (err) => {
-          console.error("RealtimeSession error:", err);
-          setState((prev) => ({
-            ...prev,
-            error:
-              typeof err.error === "string"
-                ? err.error
-                : "セッションエラーが発生しました",
-          }));
+        session.on("error", (err: unknown) => {
+          const errObj = err as Record<string, unknown>;
+          const message =
+            (errObj?.error as Record<string, unknown>)?.message ??
+            errObj?.message ??
+            (typeof errObj?.error === "string" ? errObj.error : null);
+
+          console.error(
+            "RealtimeSession error:",
+            JSON.stringify(err, null, 2),
+            err
+          );
+
+          if (message) {
+            setState((prev) => ({
+              ...prev,
+              error: String(message),
+            }));
+          }
         });
 
         await session.connect({ apiKey });
