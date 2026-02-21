@@ -1,0 +1,454 @@
+"use client";
+
+import { useCallback, useRef, useState, useEffect } from "react";
+import type { InterviewMode, TranscriptEntry } from "@/lib/types";
+
+export interface AiSuggestion {
+  id: string;
+  toolName: string;
+  text: string;
+  reason: string;
+  priority: "high" | "medium" | "low";
+  category?: string;
+  timestamp: number;
+}
+
+export interface RealtimeSessionState {
+  isConnected: boolean;
+  isConnecting: boolean;
+  isSpeaking: boolean;
+  currentAgent: string;
+  mode: InterviewMode | null;
+  transcript: TranscriptEntry[];
+  aiSuggestions: AiSuggestion[];
+  error: string | null;
+}
+
+interface RealtimeSessionActions {
+  connect: (mode: InterviewMode, scenarioId: string) => Promise<void>;
+  disconnect: () => void;
+  getMediaStream: () => MediaStream | null;
+  mute: (muted: boolean) => void;
+  isMuted: () => boolean;
+}
+
+type RealtimeSessionType = import("@openai/agents/realtime").RealtimeSession;
+type RealtimeItemType = import("@openai/agents/realtime").RealtimeItem;
+type RealtimeMessageItemType =
+  import("@openai/agents/realtime").RealtimeMessageItem;
+
+function isMessageItem(item: RealtimeItemType): item is RealtimeMessageItemType {
+  return item.type === "message";
+}
+
+function extractTranscriptFromItem(
+  item: RealtimeItemType,
+  mode: InterviewMode
+): TranscriptEntry | null {
+  if (!isMessageItem(item)) return null;
+  if (item.role === "system") return null;
+
+  if ("status" in item && item.status !== "completed") return null;
+
+  let text = "";
+  for (const content of item.content) {
+    if ("text" in content && content.text) {
+      text += content.text;
+    }
+    if ("transcript" in content && content.transcript) {
+      text += content.transcript;
+    }
+  }
+
+  if (!text.trim()) return null;
+
+  if (mode === "auto") {
+    const role: "interviewer" | "interviewee" =
+      item.role === "assistant" ? "interviewer" : "interviewee";
+    return {
+      id: `t-${item.itemId}`,
+      role,
+      text: text.trim(),
+      timestamp: Date.now(),
+    };
+  }
+
+  // Support mode: all user input is from room audio.
+  // Diarization segments will provide speaker labels separately.
+  // This fallback handles non-diarized transcript items.
+  return {
+    id: `t-${item.itemId}`,
+    role: "interviewee",
+    text: text.trim(),
+    timestamp: Date.now(),
+    speaker: "unknown",
+  };
+}
+
+function parseToolResult(toolName: string, resultJson: string): AiSuggestion | null {
+  try {
+    const data = JSON.parse(resultJson);
+    const now = Date.now();
+
+    if (toolName === "suggest_follow_up") {
+      return {
+        id: `ai-sug-${now}`,
+        toolName,
+        text: data.suggestion || "",
+        reason: data.reason || "",
+        priority: data.priority || "medium",
+        timestamp: data.timestamp || now,
+      };
+    }
+
+    if (toolName === "record_observation") {
+      return {
+        id: `ai-obs-${now}`,
+        toolName,
+        text: data.observation || "",
+        reason: `観察: ${data.category || ""}`,
+        priority: data.importance || "medium",
+        category: data.category,
+        timestamp: data.timestamp || now,
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+interface DiarizeSegment {
+  id: string;
+  item_id: string;
+  speaker: string;
+  text: string;
+  start: number;
+  end: number;
+}
+
+export function useRealtimeSession(): [
+  RealtimeSessionState,
+  RealtimeSessionActions
+] {
+  const [state, setState] = useState<RealtimeSessionState>({
+    isConnected: false,
+    isConnecting: false,
+    isSpeaking: false,
+    currentAgent: "",
+    mode: null,
+    transcript: [],
+    aiSuggestions: [],
+    error: null,
+  });
+
+  const sessionRef = useRef<RealtimeSessionType | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const processedItemIds = useRef<Set<string>>(new Set());
+  const processedSegmentIds = useRef<Set<string>>(new Set());
+  const modeRef = useRef<InterviewMode>("auto");
+  const speakerMapRef = useRef<Map<string, "interviewer" | "interviewee">>(new Map());
+
+  useEffect(() => {
+    return () => {
+      sessionRef.current?.close();
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const mapSpeakerToRole = useCallback(
+    (speakerLabel: string): "interviewer" | "interviewee" => {
+      if (speakerMapRef.current.has(speakerLabel)) {
+        return speakerMapRef.current.get(speakerLabel)!;
+      }
+      // First speaker detected is assumed to be the interviewer
+      const role: "interviewer" | "interviewee" =
+        speakerMapRef.current.size === 0 ? "interviewer" : "interviewee";
+      speakerMapRef.current.set(speakerLabel, role);
+      return role;
+    },
+    []
+  );
+
+  const connect = useCallback(
+    async (mode: InterviewMode, scenarioId: string) => {
+      setState((prev) => ({ ...prev, isConnecting: true, error: null, mode }));
+      processedItemIds.current.clear();
+      processedSegmentIds.current.clear();
+      speakerMapRef.current.clear();
+      modeRef.current = mode;
+
+      try {
+        const tokenRes = await fetch("/api/session", { method: "POST" });
+        if (!tokenRes.ok) {
+          throw new Error("セッションの作成に失敗しました");
+        }
+        const { apiKey } = await tokenRes.json();
+        if (!apiKey) {
+          throw new Error("エフェメラルトークンの取得に失敗しました");
+        }
+
+        const {
+          RealtimeSession,
+          OpenAIRealtimeWebRTC,
+        } = await import("@openai/agents/realtime");
+
+        const { getAgentForMode } = await import("@/lib/agents");
+        const agent = getAgentForMode(mode);
+
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        mediaStreamRef.current = mediaStream;
+
+        const audioElement = document.createElement("audio");
+        audioElement.autoplay = true;
+        audioElementRef.current = audioElement;
+
+        if (mode === "support") {
+          audioElement.muted = true;
+        }
+
+        const transport = new OpenAIRealtimeWebRTC({
+          mediaStream,
+          audioElement,
+        });
+
+        const transcriptionModel =
+          mode === "support" ? "gpt-4o-transcribe-diarize" : "gpt-4o-transcribe";
+
+        const session = new RealtimeSession(agent, {
+          model: "gpt-realtime",
+          transport,
+          config: {
+            audio: {
+              input: {
+                transcription: {
+                  model: transcriptionModel,
+                },
+                turnDetection: {
+                  type: "server_vad",
+                  threshold: 0.5,
+                  prefixPaddingMs: 300,
+                  silenceDurationMs: 700,
+                },
+              },
+              output: {
+                voice: "cedar",
+              },
+            },
+          },
+        });
+        sessionRef.current = session;
+
+        session.on("agent_start", (_ctx, ag) => {
+          setState((prev) => ({
+            ...prev,
+            currentAgent: ag.name,
+          }));
+        });
+
+        session.on("agent_handoff", (_ctx, _from, toAgent) => {
+          setState((prev) => ({
+            ...prev,
+            currentAgent: toAgent.name,
+          }));
+        });
+
+        if (mode === "support") {
+          // In support mode, use transport-level events for diarized segments.
+          // The transport's datachannel receives raw Realtime API server events.
+          // We intercept `conversation.item.input_audio_transcription.segment`
+          // events to get speaker-labeled transcript segments.
+          const origOn = transport.on?.bind(transport);
+          if (origOn) {
+            origOn("*", (event: Record<string, unknown>) => {
+              if (
+                event.type ===
+                "conversation.item.input_audio_transcription.segment"
+              ) {
+                const seg = event as unknown as DiarizeSegment;
+                if (processedSegmentIds.current.has(seg.id)) return;
+                processedSegmentIds.current.add(seg.id);
+
+                if (!seg.text?.trim()) return;
+
+                const role = mapSpeakerToRole(seg.speaker);
+                const entry: TranscriptEntry = {
+                  id: `seg-${seg.id}`,
+                  role,
+                  text: seg.text.trim(),
+                  timestamp: Date.now(),
+                  speaker: seg.speaker,
+                };
+
+                setState((prev) => ({
+                  ...prev,
+                  transcript: [...prev.transcript, entry],
+                }));
+              }
+            });
+          }
+
+          // Also handle history for non-diarized fallback
+          session.on("history_added", (item) => {
+            if (processedItemIds.current.has(item.itemId)) return;
+            processedItemIds.current.add(item.itemId);
+            // In support mode, diarization segments are the primary source.
+            // Skip standard history if segments are flowing.
+            if (processedSegmentIds.current.size > 0) return;
+
+            const entry = extractTranscriptFromItem(item, mode);
+            if (entry) {
+              setState((prev) => ({
+                ...prev,
+                transcript: [...prev.transcript, entry],
+              }));
+            }
+          });
+
+          session.on("history_updated", (history) => {
+            if (processedSegmentIds.current.size > 0) return;
+
+            const newTranscripts: TranscriptEntry[] = [];
+            for (const item of history) {
+              if (processedItemIds.current.has(item.itemId)) continue;
+              const entry = extractTranscriptFromItem(item, mode);
+              if (entry) {
+                processedItemIds.current.add(item.itemId);
+                newTranscripts.push(entry);
+              }
+            }
+            if (newTranscripts.length > 0) {
+              setState((prev) => ({
+                ...prev,
+                transcript: [...prev.transcript, ...newTranscripts],
+              }));
+            }
+          });
+        } else {
+          // Auto mode: standard transcript handling
+          session.on("history_added", (item) => {
+            if (processedItemIds.current.has(item.itemId)) return;
+
+            const entry = extractTranscriptFromItem(item, mode);
+            if (entry) {
+              processedItemIds.current.add(item.itemId);
+              setState((prev) => ({
+                ...prev,
+                transcript: [...prev.transcript, entry],
+              }));
+            }
+          });
+
+          session.on("history_updated", (history) => {
+            const newTranscripts: TranscriptEntry[] = [];
+            for (const item of history) {
+              if (processedItemIds.current.has(item.itemId)) continue;
+              const entry = extractTranscriptFromItem(item, mode);
+              if (entry) {
+                processedItemIds.current.add(item.itemId);
+                newTranscripts.push(entry);
+              }
+            }
+            if (newTranscripts.length > 0) {
+              setState((prev) => ({
+                ...prev,
+                transcript: [...prev.transcript, ...newTranscripts],
+              }));
+            }
+          });
+        }
+
+        session.on("agent_tool_end", (_ctx, _ag, tool, result) => {
+          const suggestion = parseToolResult(tool.name, result);
+          if (suggestion) {
+            setState((prev) => ({
+              ...prev,
+              aiSuggestions: [...prev.aiSuggestions, suggestion].slice(-30),
+            }));
+          }
+        });
+
+        session.on("audio_start", () => {
+          setState((prev) => ({ ...prev, isSpeaking: false }));
+        });
+
+        session.on("audio_interrupted", () => {
+          setState((prev) => ({ ...prev, isSpeaking: true }));
+        });
+
+        session.on("error", (err) => {
+          console.error("RealtimeSession error:", err);
+          setState((prev) => ({
+            ...prev,
+            error:
+              typeof err.error === "string"
+                ? err.error
+                : "セッションエラーが発生しました",
+          }));
+        });
+
+        await session.connect({ apiKey });
+
+        setState((prev) => ({
+          ...prev,
+          isConnected: true,
+          isConnecting: false,
+          currentAgent: agent.name,
+        }));
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "接続に失敗しました";
+        setState((prev) => ({
+          ...prev,
+          isConnecting: false,
+          error: message,
+        }));
+      }
+    },
+    [mapSpeakerToRole]
+  );
+
+  const disconnect = useCallback(() => {
+    if (sessionRef.current) {
+      sessionRef.current.close();
+      sessionRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    audioElementRef.current = null;
+    processedItemIds.current.clear();
+    processedSegmentIds.current.clear();
+    speakerMapRef.current.clear();
+    setState({
+      isConnected: false,
+      isConnecting: false,
+      isSpeaking: false,
+      currentAgent: "",
+      mode: null,
+      transcript: [],
+      aiSuggestions: [],
+      error: null,
+    });
+  }, []);
+
+  const getMediaStream = useCallback(() => mediaStreamRef.current, []);
+
+  const mute = useCallback((muted: boolean) => {
+    sessionRef.current?.mute(muted);
+  }, []);
+
+  const isMuted = useCallback(() => {
+    return sessionRef.current?.muted ?? false;
+  }, []);
+
+  return [
+    state,
+    { connect, disconnect, getMediaStream, mute, isMuted },
+  ];
+}

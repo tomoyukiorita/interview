@@ -1,0 +1,294 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRealtimeSession } from "@/hooks/useRealtimeSession";
+import { useAudioAnalysis } from "@/hooks/useAudioAnalysis";
+import { AudioVisualizer } from "./AudioVisualizer";
+import { TranscriptPanel } from "./TranscriptPanel";
+import { AnalysisPanel } from "./AnalysisPanel";
+import { SuggestionPanel } from "./SuggestionPanel";
+import { cn } from "@/lib/cn";
+import type { InterviewMode, TranscriptEntry, SpeechAudioMetrics } from "@/lib/types";
+import {
+  Mic,
+  MicOff,
+  Phone,
+  PhoneOff,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
+
+interface InterviewRoomProps {
+  mode: InterviewMode;
+  scenarioId: string;
+  onEnd: () => void;
+}
+
+export function InterviewRoom({
+  mode,
+  scenarioId,
+  onEnd,
+}: InterviewRoomProps) {
+  const [session, sessionActions] = useRealtimeSession();
+  const [analysis, analysisActions] = useAudioAnalysis();
+  const [isMuted, setIsMuted] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [metricsMap, setMetricsMap] = useState<
+    Record<string, SpeechAudioMetrics>
+  >({});
+  const processedMetricsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!startTime) return;
+    const interval = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  useEffect(() => {
+    const transcript = session.transcript;
+    if (transcript.length === 0) return;
+
+    let hasNew = false;
+    const updates: Record<string, SpeechAudioMetrics> = {};
+
+    for (let i = 0; i < transcript.length; i++) {
+      const entry = transcript[i];
+      if (entry.role !== "interviewee") continue;
+      if (processedMetricsRef.current.has(entry.id)) continue;
+
+      const prevTimestamp =
+        i > 0 ? transcript[i - 1].timestamp : (startTime ?? entry.timestamp - 5000);
+      const metrics = analysisActions.computeMetrics(prevTimestamp, entry.timestamp);
+      if (metrics && metrics.sampleCount > 0) {
+        updates[entry.id] = metrics;
+        processedMetricsRef.current.add(entry.id);
+        hasNew = true;
+      }
+    }
+
+    if (hasNew) {
+      setMetricsMap((prev) => ({ ...prev, ...updates }));
+    }
+  }, [session.transcript, analysisActions, startTime]);
+
+  const enrichedTranscript: TranscriptEntry[] = session.transcript.map(
+    (entry) => {
+      const metrics = metricsMap[entry.id];
+      return metrics ? { ...entry, speechMetrics: metrics } : entry;
+    }
+  );
+
+  const handleConnect = useCallback(async () => {
+    await sessionActions.connect(mode, scenarioId);
+    setStartTime(Date.now());
+
+    setTimeout(() => {
+      const stream = sessionActions.getMediaStream();
+      if (stream) {
+        analysisActions.startAnalysis(stream);
+      }
+    }, 1000);
+  }, [mode, scenarioId, sessionActions, analysisActions]);
+
+  const handleDisconnect = useCallback(async () => {
+    const fullAudioHistory = analysisActions.getSaveHistory();
+    analysisActions.stopAnalysis();
+
+    if (enrichedTranscript.length > 0) {
+      try {
+        await fetch("/api/results", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: `interview-${Date.now()}`,
+            scenario: scenarioId,
+            mode,
+            startedAt: startTime,
+            endedAt: Date.now(),
+            transcript: enrichedTranscript,
+            audioAnalysis: fullAudioHistory,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to save results:", err);
+      }
+    }
+
+    sessionActions.disconnect();
+    onEnd();
+  }, [
+    enrichedTranscript,
+    scenarioId,
+    mode,
+    startTime,
+    sessionActions,
+    analysisActions,
+    onEnd,
+  ]);
+
+  const toggleMute = useCallback(() => {
+    const next = !isMuted;
+    sessionActions.mute(next);
+    setIsMuted(next);
+  }, [isMuted, sessionActions]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-background">
+      {/* Header */}
+      <header className="flex items-center justify-between border-b border-border px-6 py-3">
+        <div className="flex items-center gap-4">
+          <h1 className="text-lg font-semibold text-foreground">
+            {mode === "auto" ? "自動インタビュー" : "サポートモード"}
+          </h1>
+          <span
+            className={cn(
+              "text-xs px-2 py-0.5 rounded-full",
+              session.isConnected
+                ? "bg-success/10 text-success"
+                : session.isConnecting
+                ? "bg-warning/10 text-warning"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            {session.isConnected
+              ? "接続中"
+              : session.isConnecting
+              ? "接続中..."
+              : "未接続"}
+          </span>
+          {session.isConnected && (
+            <>
+              <span className="text-sm text-muted-foreground font-mono">
+                {formatTime(elapsedTime)}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Agent: {session.currentAgent}
+              </span>
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {session.isConnected && (
+            <>
+              <button
+                onClick={toggleMute}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors",
+                  isMuted
+                    ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                    : "bg-muted text-foreground hover:bg-muted/80"
+                )}
+              >
+                {isMuted ? (
+                  <MicOff className="w-4 h-4" />
+                ) : (
+                  <Mic className="w-4 h-4" />
+                )}
+                {isMuted ? "ミュート中" : "マイク"}
+              </button>
+              <button
+                onClick={handleDisconnect}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+              >
+                <PhoneOff className="w-4 h-4" />
+                終了
+              </button>
+            </>
+          )}
+        </div>
+      </header>
+
+      {/* Error banner */}
+      {session.error && (
+        <div className="flex items-center gap-2 px-6 py-2 bg-destructive/10 text-destructive text-sm">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {session.error}
+        </div>
+      )}
+
+      {/* Main content */}
+      {!session.isConnected && !session.isConnecting ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-foreground">
+                {mode === "auto"
+                  ? "自動インタビューを開始"
+                  : "サポートモードを開始"}
+              </h2>
+              <p className="text-muted-foreground max-w-md">
+                {mode === "auto"
+                  ? "AIが自動で質問し、回答に応じて対話を分岐させます。マイクへのアクセスを許可してください。"
+                  : "人間のインタビュアーの音声を分析し、リアルタイムで次の質問を提案します。"}
+              </p>
+            </div>
+            <button
+              onClick={handleConnect}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-accent-foreground font-medium hover:bg-accent/90 transition-colors"
+            >
+              <Phone className="w-5 h-5" />
+              インタビューを開始
+            </button>
+          </div>
+        </div>
+      ) : session.isConnecting ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <Loader2 className="w-8 h-8 animate-spin text-accent mx-auto" />
+            <p className="text-muted-foreground">接続しています...</p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Audio Visualizer */}
+          <div className="px-6 pt-4">
+            <AudioVisualizer
+              energyHistory={analysis.energyHistory}
+              pitchHistory={analysis.pitchHistory}
+              currentEnergy={analysis.currentFeatures?.energy ?? 0}
+              currentPitch={analysis.currentFeatures?.pitch ?? null}
+              isSpeaking={session.isSpeaking}
+              className="h-[120px]"
+            />
+          </div>
+
+          {/* Panels */}
+          <div className="flex-1 flex gap-4 px-6 py-4 min-h-0">
+            <div className="flex-1 flex flex-col gap-4 min-h-0">
+              <TranscriptPanel
+                transcript={enrichedTranscript}
+                mode={mode}
+                className="flex-1 min-h-0"
+              />
+              {mode === "support" && (
+                <SuggestionPanel
+                  transcript={session.transcript}
+                  audioFeatures={analysis.currentFeatures}
+                  audioHistory={analysis.history}
+                  aiSuggestions={session.aiSuggestions}
+                  isConnected={session.isConnected}
+                  className="h-64 shrink-0"
+                />
+              )}
+            </div>
+            <AnalysisPanel
+              currentFeatures={analysis.currentFeatures}
+              history={analysis.history}
+              className="w-80 min-h-0"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

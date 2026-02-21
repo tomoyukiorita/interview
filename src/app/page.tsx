@@ -1,65 +1,236 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { cn } from "@/lib/cn";
+import {
+  Mic,
+  Bot,
+  Users,
+  ChevronRight,
+  AudioLines,
+  GitBranch,
+  Activity,
+} from "lucide-react";
+
+const scenarios = [
+  {
+    id: "general",
+    title: "一般インタビュー",
+    description: "経験・スキル・行動面を幅広くカバーする標準シナリオ",
+    topics: 5,
+  },
+  {
+    id: "user_research",
+    title: "ユーザーリサーチ",
+    description: "プロダクトの利用体験やニーズを深掘りするシナリオ",
+    topics: 4,
+  },
+];
+
+const features = [
+  {
+    icon: AudioLines,
+    title: "音声認識 & リアルタイム分析",
+    description:
+      "speech-to-speech対話。ピッチ・エネルギー・声の特徴をリアルタイム分析",
+  },
+  {
+    icon: Activity,
+    title: "感情・声質分析",
+    description:
+      "Web Audio API + Meydaで音響特徴量を抽出。声の抑揚やトーンから感情状態を推定",
+  },
+  {
+    icon: GitBranch,
+    title: "対話分岐",
+    description:
+      "回答内容と感情に応じて次の質問を動的に決定。AIが適切なフォローアップを自動選択",
+  },
+];
 
 export default function Home() {
+  const router = useRouter();
+  const [selectedScenario, setSelectedScenario] = useState("general");
+  const [selectedMode, setSelectedMode] = useState<"auto" | "support">(
+    "auto"
+  );
+
+  const handleStart = () => {
+    const params = new URLSearchParams({
+      mode: selectedMode,
+      scenario: selectedScenario,
+    });
+    router.push(`/interview?${params.toString()}`);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-screen bg-background">
+      {/* Hero */}
+      <div className="border-b border-border">
+        <div className="max-w-5xl mx-auto px-6 py-16">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-accent/10">
+              <Mic className="w-6 h-6 text-accent" />
+            </div>
+            <span className="text-sm font-medium text-accent">
+              AI Interview Assistant
+            </span>
+          </div>
+          <h1 className="text-4xl font-bold text-foreground mb-4 leading-tight">
+            音声AIインタビュー
+            <br />
+            <span className="text-muted-foreground">
+              アシスタント
+            </span>
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-lg text-muted-foreground max-w-2xl">
+            音声AIを活用したインタビュー支援ツール
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </div>
+
+      {/* Features */}
+      <div className="border-b border-border">
+        <div className="max-w-5xl mx-auto px-6 py-12">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {features.map((feature) => (
+              <div
+                key={feature.title}
+                className="rounded-lg border border-border bg-card p-5"
+              >
+                <feature.icon className="w-5 h-5 text-accent mb-3" />
+                <h3 className="text-sm font-semibold text-foreground mb-2">
+                  {feature.title}
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {feature.description}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
+      </div>
+
+      {/* Setup */}
+      <div className="max-w-5xl mx-auto px-6 py-12">
+        <h2 className="text-xl font-semibold text-foreground mb-6">
+          インタビュー設定
+        </h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Mode selection */}
+          <div>
+            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+              モード選択
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => setSelectedMode("auto")}
+                className={cn(
+                  "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                  selectedMode === "auto"
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                )}
+              >
+                <Bot
+                  className={cn(
+                    "w-5 h-5 mt-0.5 shrink-0",
+                    selectedMode === "auto"
+                      ? "text-accent"
+                      : "text-muted-foreground"
+                  )}
+                />
+                <div>
+                  <div className="font-medium text-foreground text-sm">
+                    自動インタビュー
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    AIが質問を行い、回答に応じて対話を自動分岐します。
+                    人間の介入なしで完全なインタビューを実施できます。
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setSelectedMode("support")}
+                className={cn(
+                  "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                  selectedMode === "support"
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                )}
+              >
+                <Users
+                  className={cn(
+                    "w-5 h-5 mt-0.5 shrink-0",
+                    selectedMode === "support"
+                      ? "text-accent"
+                      : "text-muted-foreground"
+                  )}
+                />
+                <div>
+                  <div className="font-medium text-foreground text-sm">
+                    サポートモード
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    人間のインタビュアーをAIがリアルタイムでサポート。
+                    音声分析と次の質問提案を表示します。
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Scenario selection */}
+          <div>
+            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+              シナリオ選択
+            </h3>
+            <div className="space-y-3">
+              {scenarios.map((scenario) => (
+                <button
+                  key={scenario.id}
+                  onClick={() => setSelectedScenario(scenario.id)}
+                  className={cn(
+                    "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                    selectedScenario === scenario.id
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="flex-1">
+                    <div className="font-medium text-foreground text-sm">
+                      {scenario.title}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {scenario.description}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-2">
+                      {scenario.topics} トピック
+                    </div>
+                  </div>
+                  {selectedScenario === scenario.id && (
+                    <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Start button */}
+        <div className="mt-8 flex justify-center">
+          <button
+            onClick={handleStart}
+            className="inline-flex items-center gap-2 px-8 py-3 rounded-xl bg-accent text-accent-foreground font-medium hover:bg-accent/90 transition-colors text-base"
+          >
+            インタビューを開始
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
