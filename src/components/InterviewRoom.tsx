@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRealtimeSession } from "@/hooks/useRealtimeSession";
 import { useAudioAnalysis } from "@/hooks/useAudioAnalysis";
+import { useTabCapture } from "@/hooks/useTabCapture";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { TranscriptPanel } from "./TranscriptPanel";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { SuggestionPanel } from "./SuggestionPanel";
+import { EmotionIndicator } from "./EmotionIndicator";
 import { cn } from "@/lib/cn";
-import type { InterviewMode, TranscriptEntry, SpeechAudioMetrics } from "@/lib/types";
+import type { InterviewMode, TranscriptEntry, SpeechAudioMetrics, EmotionState } from "@/lib/types";
 import {
   Mic,
   MicOff,
@@ -16,6 +18,7 @@ import {
   PhoneOff,
   AlertCircle,
   Loader2,
+  Monitor,
 } from "lucide-react";
 
 interface InterviewRoomProps {
@@ -31,13 +34,17 @@ export function InterviewRoom({
 }: InterviewRoomProps) {
   const [session, sessionActions] = useRealtimeSession();
   const [analysis, analysisActions] = useAudioAnalysis();
+  const [tabCapture, tabCaptureActions] = useTabCapture();
   const [isMuted, setIsMuted] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [metricsMap, setMetricsMap] = useState<
     Record<string, SpeechAudioMetrics>
   >({});
+  const [emotionTimeline, setEmotionTimeline] = useState<EmotionState[]>([]);
   const processedMetricsRef = useRef<Set<string>>(new Set());
+  const isOnlineSupport = mode === "online_support";
+  const showEmotion = mode !== undefined;
 
   useEffect(() => {
     if (!startTime) return;
@@ -74,27 +81,62 @@ export function InterviewRoom({
     }
   }, [session.transcript, analysisActions, startTime]);
 
+  const handleEmotionChange = useCallback((emotion: EmotionState) => {
+    setEmotionTimeline((prev) => [...prev, emotion]);
+  }, []);
+
   const enrichedTranscript: TranscriptEntry[] = session.transcript.map(
     (entry) => {
+      let enriched: TranscriptEntry = entry;
       const metrics = metricsMap[entry.id];
-      return metrics ? { ...entry, speechMetrics: metrics } : entry;
+      if (metrics) enriched = { ...enriched, speechMetrics: metrics };
+
+      if (showEmotion && entry.role === "interviewee" && emotionTimeline.length > 0) {
+        let closest = emotionTimeline[0];
+        let minDiff = Math.abs(entry.timestamp - closest.timestamp);
+        for (const e of emotionTimeline) {
+          const diff = Math.abs(entry.timestamp - e.timestamp);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closest = e;
+          }
+        }
+        if (minDiff < 5000) {
+          enriched = { ...enriched, emotionState: closest };
+        }
+      }
+
+      return enriched;
     }
   );
 
   const handleConnect = useCallback(async () => {
-    await sessionActions.connect(mode, scenarioId);
-    setStartTime(Date.now());
+    if (isOnlineSupport) {
+      const intervieweeStream = await tabCaptureActions.startCapture();
+      if (!intervieweeStream) return;
 
-    setTimeout(() => {
-      const stream = sessionActions.getMediaStream();
-      if (stream) {
-        analysisActions.startAnalysis(stream);
-      }
-    }, 1000);
-  }, [mode, scenarioId, sessionActions, analysisActions]);
+      await sessionActions.connect(mode, scenarioId, { intervieweeStream });
+      setStartTime(Date.now());
+
+      setTimeout(() => {
+        analysisActions.startAnalysis(intervieweeStream);
+      }, 500);
+    } else {
+      await sessionActions.connect(mode, scenarioId);
+      setStartTime(Date.now());
+
+      setTimeout(() => {
+        const stream = sessionActions.getMediaStream();
+        if (stream) {
+          analysisActions.startAnalysis(stream);
+        }
+      }, 1000);
+    }
+  }, [mode, scenarioId, sessionActions, analysisActions, tabCaptureActions, isOnlineSupport]);
 
   const handleDisconnect = useCallback(async () => {
     analysisActions.stopAnalysis();
+    tabCaptureActions.stopCapture();
 
     // TODO: DB導入後に結果保存を有効化する
     // const fullAudioHistory = analysisActions.getSaveHistory();
@@ -107,6 +149,7 @@ export function InterviewRoom({
   }, [
     sessionActions,
     analysisActions,
+    tabCaptureActions,
     onEnd,
   ]);
 
@@ -128,7 +171,11 @@ export function InterviewRoom({
       <header className="flex items-center justify-between border-b border-border px-6 py-3">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-semibold text-foreground">
-            {mode === "auto" ? "自動インタビュー" : "サポートモード"}
+            {mode === "auto"
+              ? "自動インタビュー"
+              : mode === "online_support"
+              ? "オンラインサポート"
+              : "サポートモード"}
           </h1>
           <span
             className={cn(
@@ -200,25 +247,52 @@ export function InterviewRoom({
       {/* Main content */}
       {!session.isConnected && !session.isConnecting ? (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-6">
+          <div className="text-center space-y-6 max-w-lg">
             <div className="space-y-2">
               <h2 className="text-2xl font-bold text-foreground">
                 {mode === "auto"
                   ? "自動インタビューを開始"
+                  : mode === "online_support"
+                  ? "オンラインサポートを開始"
                   : "サポートモードを開始"}
               </h2>
-              <p className="text-muted-foreground max-w-md">
+              <p className="text-muted-foreground">
                 {mode === "auto"
                   ? "AIが自動で質問し、回答に応じて対話を分岐させます。マイクへのアクセスを許可してください。"
+                  : mode === "online_support"
+                  ? "ビデオ通話タブの音声をキャプチャして回答者の感情をリアルタイム分析します。開始後にビデオ通話のタブを選択してください。"
                   : "人間のインタビュアーの音声を分析し、リアルタイムで次の質問を提案します。"}
               </p>
             </div>
+
+            {isOnlineSupport && (
+              <div className="rounded-lg border border-border bg-card p-4 text-left space-y-2">
+                <h3 className="text-sm font-semibold text-foreground">準備手順</h3>
+                <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                  <li>Zoom / Meet / Teams 等のビデオ通話を別タブで開始</li>
+                  <li>下の「開始」ボタンをクリック</li>
+                  <li>ブラウザのダイアログでビデオ通話タブを選択し「タブの音声を共有」にチェック</li>
+                </ol>
+              </div>
+            )}
+
+            {(tabCapture.error || session.error) && (
+              <div className="flex items-center gap-2 text-destructive text-sm justify-center">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {tabCapture.error || session.error}
+              </div>
+            )}
+
             <button
               onClick={handleConnect}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-accent-foreground font-medium hover:bg-accent/90 transition-colors"
             >
-              <Phone className="w-5 h-5" />
-              インタビューを開始
+              {isOnlineSupport ? (
+                <Monitor className="w-5 h-5" />
+              ) : (
+                <Phone className="w-5 h-5" />
+              )}
+              {isOnlineSupport ? "タブ音声をキャプチャして開始" : "インタビューを開始"}
             </button>
           </div>
         </div>
@@ -246,12 +320,19 @@ export function InterviewRoom({
           {/* Panels */}
           <div className="flex-1 flex gap-4 px-6 py-4 min-h-0">
             <div className="flex-1 flex flex-col gap-4 min-h-0">
+              <EmotionIndicator
+                currentFeatures={analysis.currentFeatures}
+                history={analysis.history}
+                saveHistory={analysisActions.getSaveHistory()}
+                onEmotionChange={handleEmotionChange}
+                className="shrink-0"
+              />
               <TranscriptPanel
                 transcript={enrichedTranscript}
                 mode={mode}
                 className="flex-1 min-h-0"
               />
-              {mode === "support" && (
+              {(mode === "support" || mode === "online_support") && (
                 <SuggestionPanel
                   transcript={session.transcript}
                   audioFeatures={analysis.currentFeatures}

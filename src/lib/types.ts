@@ -1,6 +1,23 @@
-export type InterviewMode = "auto" | "support";
+export type InterviewMode = "auto" | "support" | "online_support";
 
 export type Sentiment = "positive" | "neutral" | "negative";
+
+export type EmotionLabel =
+  | "enthusiastic"
+  | "confident"
+  | "nervous"
+  | "hesitant"
+  | "disengaged"
+  | "neutral";
+
+export interface EmotionState {
+  excitement: number;
+  nervousness: number;
+  confidence: number;
+  engagement: number;
+  label: EmotionLabel;
+  timestamp: number;
+}
 
 export interface InterviewQuestion {
   id: string;
@@ -53,6 +70,7 @@ export interface TranscriptEntry {
   timestamp: number;
   audioFeatures?: Partial<AudioFeatures>;
   speechMetrics?: SpeechAudioMetrics;
+  emotionState?: EmotionState;
   sentiment?: Sentiment;
   speaker?: string;
 }
@@ -65,6 +83,7 @@ export interface InterviewResult {
   endedAt?: number;
   transcript: TranscriptEntry[];
   audioAnalysis: AudioFeatures[];
+  emotionTimeline?: EmotionState[];
   summary?: string;
 }
 

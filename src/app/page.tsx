@@ -7,6 +7,7 @@ import {
   Mic,
   Bot,
   Users,
+  Monitor,
   ChevronRight,
   AudioLines,
   GitBranch,
@@ -52,9 +53,9 @@ const features = [
 export default function Home() {
   const router = useRouter();
   const [selectedScenario, setSelectedScenario] = useState("general");
-  const [selectedMode, setSelectedMode] = useState<"auto" | "support">(
-    "auto"
-  );
+  const [selectedMode, setSelectedMode] = useState<
+    "auto" | "support" | "online_support"
+  >("auto");
 
   const handleStart = () => {
     const params = new URLSearchParams({
@@ -177,6 +178,37 @@ export default function Home() {
                   <div className="text-xs text-muted-foreground mt-1">
                     人間のインタビュアーをAIがリアルタイムでサポート。
                     音声分析と次の質問提案を表示します。
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setSelectedMode("online_support")}
+                className={cn(
+                  "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                  selectedMode === "online_support"
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                )}
+              >
+                <Monitor
+                  className={cn(
+                    "w-5 h-5 mt-0.5 shrink-0",
+                    selectedMode === "online_support"
+                      ? "text-accent"
+                      : "text-muted-foreground"
+                  )}
+                />
+                <div>
+                  <div className="font-medium text-foreground text-sm">
+                    オンラインサポート
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Zoom / Meet / Teams 等のオンライン面接をリアルタイムでサポート。
+                    回答者の感情分析・質問提案を表示します。
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/70 mt-1">
+                    推奨: Chrome
                   </div>
                 </div>
               </button>

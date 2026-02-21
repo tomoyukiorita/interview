@@ -260,6 +260,6 @@ export const supportAgent = new RealtimeAgent({
   tools: [suggestFollowUp, recordObservation],
 });
 
-export function getAgentForMode(mode: "auto" | "support") {
+export function getAgentForMode(mode: "auto" | "support" | "online_support") {
   return mode === "auto" ? interviewAgent : supportAgent;
 }

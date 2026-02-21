@@ -24,8 +24,12 @@ export interface RealtimeSessionState {
   error: string | null;
 }
 
+interface ConnectOptions {
+  intervieweeStream?: MediaStream;
+}
+
 interface RealtimeSessionActions {
-  connect: (mode: InterviewMode, scenarioId: string) => Promise<void>;
+  connect: (mode: InterviewMode, scenarioId: string, options?: ConnectOptions) => Promise<void>;
   disconnect: () => void;
   getMediaStream: () => MediaStream | null;
   mute: (muted: boolean) => void;
@@ -73,9 +77,18 @@ function extractTranscriptFromItem(
     };
   }
 
-  // Support mode: all user input is from room audio.
-  // Diarization segments will provide speaker labels separately.
-  // This fallback handles non-diarized transcript items.
+  if (mode === "online_support") {
+    // In online_support the mixed audio goes in as "user" input.
+    // The AI never generates speech, so all items are from the conversation.
+    return {
+      id: `t-${item.itemId}`,
+      role: "interviewee",
+      text: text.trim(),
+      timestamp: Date.now(),
+    };
+  }
+
+  // Support mode (in-person): all user input is from room audio.
   return {
     id: `t-${item.itemId}`,
     role: "interviewee",
@@ -146,6 +159,7 @@ export function useRealtimeSession(): [
   const sessionRef = useRef<RealtimeSessionType | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const mixerDisposeRef = useRef<(() => void) | null>(null);
   const processedItemIds = useRef<Set<string>>(new Set());
   const processedSegmentIds = useRef<Set<string>>(new Set());
   const modeRef = useRef<InterviewMode>("auto");
@@ -173,7 +187,7 @@ export function useRealtimeSession(): [
   );
 
   const connect = useCallback(
-    async (mode: InterviewMode, scenarioId: string) => {
+    async (mode: InterviewMode, scenarioId: string, options?: ConnectOptions) => {
       setState((prev) => ({ ...prev, isConnecting: true, error: null, mode }));
       processedItemIds.current.clear();
       processedSegmentIds.current.clear();
@@ -198,21 +212,30 @@ export function useRealtimeSession(): [
         const { getAgentForMode } = await import("@/lib/agents");
         const agent = getAgentForMode(mode);
 
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
+        const micStream = await navigator.mediaDevices.getUserMedia({
           audio: true,
         });
-        mediaStreamRef.current = mediaStream;
+        mediaStreamRef.current = micStream;
+
+        let transportStream = micStream;
+
+        if (mode === "online_support" && options?.intervieweeStream) {
+          const { createMixedStream } = await import("@/lib/audio-mixer");
+          const mixer = createMixedStream(micStream, options.intervieweeStream);
+          mixerDisposeRef.current = mixer.dispose;
+          transportStream = mixer.mixedStream;
+        }
 
         const audioElement = document.createElement("audio");
         audioElement.autoplay = true;
         audioElementRef.current = audioElement;
 
-        if (mode === "support") {
+        if (mode === "support" || mode === "online_support") {
           audioElement.muted = true;
         }
 
         const transport = new OpenAIRealtimeWebRTC({
-          mediaStream,
+          mediaStream: transportStream,
           audioElement,
         });
 
@@ -256,8 +279,8 @@ export function useRealtimeSession(): [
           }));
         });
 
-        if (mode === "support") {
-          // In support mode, try to capture diarized segments from the
+        if (mode === "support" || mode === "online_support") {
+          // In support / online_support mode, try to capture diarized segments from the
           // transport's datachannel. If the API provides speaker labels
           // we use them; otherwise fall back to standard history.
           try {
@@ -425,6 +448,10 @@ export function useRealtimeSession(): [
     if (sessionRef.current) {
       sessionRef.current.close();
       sessionRef.current = null;
+    }
+    if (mixerDisposeRef.current) {
+      mixerDisposeRef.current();
+      mixerDisposeRef.current = null;
     }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((t) => t.stop());

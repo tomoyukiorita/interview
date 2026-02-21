@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/cn";
 import type { InterviewMode, SpeechAudioMetrics, TranscriptEntry } from "@/lib/types";
+import { EMOTION_LABELS_JA, EMOTION_COLORS } from "@/lib/emotion-analyzer";
 import { User, Mic, TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 interface TranscriptPanelProps {
@@ -15,7 +16,7 @@ function getSpeakerLabel(
   entry: TranscriptEntry,
   mode: InterviewMode | undefined
 ): string {
-  if (mode === "support") {
+  if (mode === "support" || mode === "online_support") {
     if (entry.speaker && entry.speaker !== "unknown") {
       return entry.role === "interviewer"
         ? `インタビュアー (${entry.speaker})`
@@ -92,6 +93,11 @@ export function TranscriptPanel({
               話者分離
             </span>
           )}
+          {mode === "online_support" && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent">
+              オンライン
+            </span>
+          )}
           <span className="text-xs text-muted-foreground">
             {transcript.length} 件
           </span>
@@ -164,6 +170,16 @@ export function TranscriptPanel({
                 <p className="leading-relaxed">{entry.text}</p>
                 {entry.speechMetrics && (
                   <MetricsBadge metrics={entry.speechMetrics} />
+                )}
+                {entry.emotionState && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center text-xs px-1.5 py-0.5 rounded mt-1 border",
+                      EMOTION_COLORS[entry.emotionState.label]
+                    )}
+                  >
+                    {EMOTION_LABELS_JA[entry.emotionState.label]}
+                  </span>
                 )}
               </div>
             </div>
