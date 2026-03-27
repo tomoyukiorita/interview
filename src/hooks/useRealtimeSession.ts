@@ -209,7 +209,10 @@ export function useRealtimeSession(): [
           OpenAIRealtimeWebRTC,
         } = await import("@openai/agents/realtime");
 
-        const { getAgentForMode } = await import("@/lib/agents");
+        const { getAgentForMode, resetInterviewState } = await import(
+          "@/lib/agents"
+        );
+        resetInterviewState(scenarioId);
         const agent = getAgentForMode(mode);
 
         const micStream = await navigator.mediaDevices.getUserMedia({
@@ -239,7 +242,10 @@ export function useRealtimeSession(): [
           audioElement,
         });
 
-        const transcriptionModel = "gpt-4o-transcribe";
+        const transcriptionModel =
+          mode === "support" || mode === "online_support"
+            ? "gpt-4o-transcribe-diarize"
+            : "gpt-4o-transcribe";
 
         const session = new RealtimeSession(agent, {
           model: "gpt-realtime",
@@ -294,6 +300,7 @@ export function useRealtimeSession(): [
                   const seg = event as unknown as DiarizeSegment;
                   if (processedSegmentIds.current.has(seg.id)) return;
                   processedSegmentIds.current.add(seg.id);
+                  processedItemIds.current.add(seg.item_id);
 
                   if (!seg.text?.trim()) return;
 
@@ -320,7 +327,6 @@ export function useRealtimeSession(): [
           session.on("history_added", (item) => {
             if (processedItemIds.current.has(item.itemId)) return;
             processedItemIds.current.add(item.itemId);
-            if (processedSegmentIds.current.size > 0) return;
 
             const entry = extractTranscriptFromItem(item, mode);
             if (entry) {
@@ -332,8 +338,6 @@ export function useRealtimeSession(): [
           });
 
           session.on("history_updated", (history) => {
-            if (processedSegmentIds.current.size > 0) return;
-
             const newTranscripts: TranscriptEntry[] = [];
             for (const item of history) {
               if (processedItemIds.current.has(item.itemId)) continue;
