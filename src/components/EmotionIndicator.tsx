@@ -13,42 +13,52 @@ import { Activity } from "lucide-react";
 interface EmotionIndicatorProps {
   currentFeatures: AudioFeatures | null;
   history: AudioFeatures[];
-  saveHistory: AudioFeatures[];
+  getSaveHistory: () => AudioFeatures[];
   className?: string;
   onEmotionChange?: (emotion: EmotionState) => void;
 }
 
 const ANALYSIS_WINDOW = 6;
+const THROTTLE_MS = 800;
 
 export function EmotionIndicator({
   currentFeatures,
   history,
-  saveHistory,
+  getSaveHistory,
   className,
   onEmotionChange,
 }: EmotionIndicatorProps) {
   const [emotion, setEmotion] = useState<EmotionState | null>(null);
-  const [prevLabel, setPrevLabel] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const onChangeRef = useRef(onEmotionChange);
   onChangeRef.current = onEmotionChange;
+  const getSaveHistoryRef = useRef(getSaveHistory);
+  getSaveHistoryRef.current = getSaveHistory;
+  const prevLabelRef = useRef<string | null>(null);
+  const lastAnalysisRef = useRef(0);
 
   useEffect(() => {
     if (!currentFeatures || history.length < 3) return;
 
+    const now = Date.now();
+    if (now - lastAnalysisRef.current < THROTTLE_MS) return;
+    lastAnalysisRef.current = now;
+
     const recentSamples = history.slice(-ANALYSIS_WINDOW);
-    const result = analyzeEmotion(recentSamples, saveHistory);
+    const fullHistory = getSaveHistoryRef.current();
+    const result = analyzeEmotion(recentSamples, fullHistory);
 
     setEmotion(result);
     onChangeRef.current?.(result);
 
-    if (prevLabel && result.label !== prevLabel) {
+    if (prevLabelRef.current && result.label !== prevLabelRef.current) {
       setFlash(true);
       const t = setTimeout(() => setFlash(false), 1500);
+      prevLabelRef.current = result.label;
       return () => clearTimeout(t);
     }
-    setPrevLabel(result.label);
-  }, [currentFeatures, history, saveHistory, prevLabel]);
+    prevLabelRef.current = result.label;
+  }, [currentFeatures, history]);
 
   if (!emotion) {
     return (

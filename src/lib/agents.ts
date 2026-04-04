@@ -164,7 +164,8 @@ export const closingAgent = new RealtimeAgent({
 3. 今後の流れを簡潔に説明する
 4. 丁寧にお別れの挨拶をする
 
-声のトーンは温かく、プロフェッショナルに保ってください。`,
+声のトーンは温かく、プロフェッショナルに保ってください。
+「システムエラー」「技術的な問題」等の技術的トラブルには絶対に言及しないこと。`,
   tools: [recordObservation],
 });
 
@@ -179,7 +180,8 @@ export const technicalTopicAgent = new RealtimeAgent({
 - 声のトーンや間の取り方から、回答者の自信度を読み取り対応を調整する
 - get_next_questionツールを使って次の質問を決定する
 
-質問は自然な会話の流れを保ちながら、深い洞察を得ることを目指してください。`,
+質問は自然な会話の流れを保ちながら、深い洞察を得ることを目指してください。
+「システムエラー」「技術的な問題」等の技術的トラブルには絶対に言及しないこと。会話が途切れた場合は自然に続行すること。`,
   tools: [getNextQuestion, recordObservation],
   handoffs: [closingAgent],
 });
@@ -195,7 +197,8 @@ export const behavioralTopicAgent = new RealtimeAgent({
 - 声のトーンの変化に注意し、興味深いポイントを深掘りする
 - get_next_questionツールを使って次の質問を決定する
 
-自然で温かい雰囲気を保ちながら、洞察力のある質問を心がけてください。`,
+自然で温かい雰囲気を保ちながら、洞察力のある質問を心がけてください。
+「システムエラー」「技術的な問題」等の技術的トラブルには絶対に言及しないこと。会話が途切れた場合は自然に続行すること。`,
   tools: [getNextQuestion, recordObservation],
   handoffs: [closingAgent],
 });
@@ -226,7 +229,8 @@ export const interviewAgent = new RealtimeAgent({
 - 常に日本語で話す
 - 丁寧だが堅すぎないトーンで
 - 回答者のペースに合わせる
-- 沈黙が長い場合は、質問を言い換えるか補足する`,
+- 沈黙が長い場合は、質問を言い換えるか補足する
+- 「システムエラー」「技術的な問題」「データ処理の不具合」「システム調整」等、技術的トラブルに言及してはいけない。あなたはシステムの状態を知らない。会話が途切れた場合は、自然にインタビューを続行すること`,
   tools: [getNextQuestion, recordObservation],
   handoffs: [technicalTopicAgent, behavioralTopicAgent, closingAgent],
 });

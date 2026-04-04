@@ -195,29 +195,18 @@ export function useRealtimeSession(): [
       modeRef.current = mode;
 
       try {
-        const tokenRes = await fetch("/api/session", { method: "POST" });
-        if (!tokenRes.ok) {
-          throw new Error("セッションの作成に失敗しました");
-        }
-        const { apiKey } = await tokenRes.json();
-        if (!apiKey) {
-          throw new Error("エフェメラルトークンの取得に失敗しました");
-        }
-
-        const {
-          RealtimeSession,
-          OpenAIRealtimeWebRTC,
-        } = await import("@openai/agents/realtime");
-
-        const { getAgentForMode, resetInterviewState } = await import(
-          "@/lib/agents"
-        );
-        resetInterviewState(scenarioId);
-        const agent = getAgentForMode(mode);
-
-        const micStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
+        // 独立したasync処理を並列実行（トークン取得はsession.connect直前まで遅延）
+        const [
+          { RealtimeSession, OpenAIRealtimeWebRTC },
+          agentsModule,
+          micStream,
+        ] = await Promise.all([
+          import("@openai/agents/realtime"),
+          import("@/lib/agents"),
+          navigator.mediaDevices.getUserMedia({ audio: true }),
+        ]);
+        agentsModule.resetInterviewState(scenarioId);
+        const agent = agentsModule.getAgentForMode(mode);
         mediaStreamRef.current = micStream;
 
         let transportStream = micStream;
@@ -427,7 +416,39 @@ export function useRealtimeSession(): [
           }
         });
 
-        await session.connect({ apiKey });
+        // トークン取得をsession.connect直前まで遅延させ、TTL消費を最小化
+        const apiKeyFn = async () => {
+          const tokenRes = await fetch("/api/session", { method: "POST" });
+          if (!tokenRes.ok) {
+            throw new Error("セッションの作成に失敗しました");
+          }
+          const data = await tokenRes.json();
+          if (!data.apiKey) {
+            throw new Error("エフェメラルトークンの取得に失敗しました");
+          }
+          return data.apiKey as string;
+        };
+
+        // 最大2回試行（リトライ時は自動的に新トークンを取得）
+        let lastError: Error | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            await session.connect({ apiKey: apiKeyFn });
+            lastError = null;
+            break;
+          } catch (err) {
+            lastError =
+              err instanceof Error ? err : new Error("接続に失敗しました");
+            console.warn(
+              `RealtimeSession connect attempt ${attempt + 1} failed:`,
+              err
+            );
+            if (attempt === 0) {
+              await new Promise((r) => setTimeout(r, 500));
+            }
+          }
+        }
+        if (lastError) throw lastError;
 
         setState((prev) => ({
           ...prev,

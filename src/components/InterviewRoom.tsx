@@ -323,7 +323,7 @@ export function InterviewRoom({
               <EmotionIndicator
                 currentFeatures={analysis.currentFeatures}
                 history={analysis.history}
-                saveHistory={analysisActions.getSaveHistory()}
+                getSaveHistory={analysisActions.getSaveHistory}
                 onEmotionChange={handleEmotionChange}
                 className="shrink-0"
               />
