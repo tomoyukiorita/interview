@@ -90,6 +90,7 @@ export interface InterviewResult {
 export interface BranchDecision {
   nextQuestionId: string;
   reason: string;
+  nextQuestionText?: string;
   suggestedTopic?: string;
   shouldHandoff: boolean;
   handoffTarget?: string;

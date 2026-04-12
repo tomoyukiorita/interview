@@ -17,9 +17,10 @@ import {
 const scenarios = [
   {
     id: "general",
-    title: "一般インタビュー",
-    description: "経験・スキル・行動面を幅広くカバーする標準シナリオ",
-    topics: 5,
+    title: "経営者向けwell-beingインタビュー",
+    description:
+      "経営、組織文化、採用、社会への広がりをwell-being視点で深掘りするシナリオ",
+    topics: 8,
   },
   {
     id: "user_research",

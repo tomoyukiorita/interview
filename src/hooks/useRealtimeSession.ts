@@ -237,7 +237,7 @@ export function useRealtimeSession(): [
             : "gpt-4o-transcribe";
 
         const session = new RealtimeSession(agent, {
-          model: "gpt-realtime",
+          model: "gpt-realtime-1.5",
           transport,
           config: {
             audio: {
