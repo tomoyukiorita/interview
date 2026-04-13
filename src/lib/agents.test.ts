@@ -50,6 +50,7 @@ describe("interviewer character prompts", () => {
     expect(leadershipInstructions).toContain("1文だけ");
     expect(leadershipInstructions).toContain("ワクワクしますね");
     expect(leadershipInstructions).toContain("次の質問まで続ける");
+    expect(leadershipInstructions).toContain("経営と経営者ご自身のwell-beingを中心に伺いますね");
     expect(leadershipInstructions).toContain("同じ言い回しを連続で使わない");
     expect(organizationInstructions).toContain("候補者体験");
     expect(organizationInstructions).toContain("handoff直後");
@@ -59,6 +60,9 @@ describe("interviewer character prompts", () => {
     expect(organizationInstructions).toContain("受けてから次の質問");
     expect(organizationInstructions).toContain("ほんとうにそうですね");
     expect(organizationInstructions).toContain("受けだけで終わらせない");
+    expect(organizationInstructions).toContain(
+      "組織文化や採用、多様性の観点から伺いますね"
+    );
     expect(organizationInstructions).toContain("質問の前に毎回");
   });
 

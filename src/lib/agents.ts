@@ -11,6 +11,7 @@ let interviewState = {
   currentScenarioId: "general",
   currentTopicIndex: 0,
   currentQuestionIndex: 0,
+  currentTopicFollowUpCount: 0,
   transcript: [] as TranscriptEntry[],
   completedTopics: [] as string[],
 };
@@ -20,6 +21,7 @@ export function resetInterviewState(scenarioId: string = "general") {
     currentScenarioId: scenarioId,
     currentTopicIndex: 0,
     currentQuestionIndex: 0,
+    currentTopicFollowUpCount: 0,
     transcript: [],
     completedTopics: [],
   };
@@ -82,8 +84,20 @@ const getNextQuestion = tool({
         sentiment,
         topicCovered,
         answerQuality,
+        topicFollowUpCount: interviewState.currentTopicFollowUpCount,
       }
     );
+
+    const currentQuestion =
+      scenario.topics[interviewState.currentTopicIndex]?.questions[
+        interviewState.currentQuestionIndex
+      ];
+    const consumedTopicFollowUp =
+      Boolean(currentQuestion) &&
+      (answerQuality === "brief" || answerQuality === "off_topic") &&
+      interviewState.currentTopicFollowUpCount < 1 &&
+      decision.nextQuestionId === currentQuestion?.id &&
+      decision.nextQuestionText !== currentQuestion?.text;
 
     if (decision.suggestedTopic) {
       const topicIdx = scenario.topics.findIndex(
@@ -92,15 +106,21 @@ const getNextQuestion = tool({
       if (topicIdx >= 0) {
         interviewState.currentTopicIndex = topicIdx;
         interviewState.currentQuestionIndex = 0;
+        interviewState.currentTopicFollowUpCount = 0;
       }
     } else if (topicCovered) {
       interviewState.currentTopicIndex++;
       interviewState.currentQuestionIndex = 0;
+      interviewState.currentTopicFollowUpCount = 0;
       if (decision.suggestedTopic) {
         interviewState.completedTopics.push(decision.suggestedTopic);
       }
     } else {
-      interviewState.currentQuestionIndex++;
+      if (consumedTopicFollowUp) {
+        interviewState.currentTopicFollowUpCount++;
+      } else {
+        interviewState.currentQuestionIndex++;
+      }
     }
 
     interviewState.transcript.push({
@@ -232,7 +252,7 @@ ${editorialStyleRules}
 - 回答を受けたら、まず短く受ける
 - 受けは1文だけにして、そのあと次の質問に入る
 - shouldHandoff が false で nextQuestionText があるターンは、受けだけで終わらせず、同じ発話の中で次の質問まで続ける
-- handoff直後は、直前の get_next_question が返した nextQuestionText を最初の質問として扱う
+- handoff直後は、「ここからは、経営と経営者ご自身のwell-beingを中心に伺いますね」と1文だけ短く伝えてから、直前の get_next_question が返した nextQuestionText を最初の質問として扱う
 - ラベル化、要約、仮説は必要なときだけ短く使い、重ねすぎない
 - get_next_questionツールを使って次の質問を決定する
 
@@ -259,7 +279,7 @@ ${editorialStyleRules}
 - 回答を受けたら、まず短く受ける
 - 受けてから次の質問に入る
 - shouldHandoff が false で nextQuestionText があるターンは、受けだけで終わらせず、同じ発話の中で次の質問まで続ける
-- handoff直後は、直前の get_next_question が返した nextQuestionText を最初の質問として扱う
+- handoff直後は、「ここからは、組織文化や採用、多様性の観点から伺いますね」と1文だけ短く伝えてから、直前の get_next_question が返した nextQuestionText を最初の質問として扱う
 - 言い換え確認やラベル化は必要なときだけ使い、質問の前に毎回入れない
 - get_next_questionツールを使って次の質問を決定する
 
