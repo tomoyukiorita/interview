@@ -1,4 +1,13 @@
 export type InterviewMode = "auto" | "support" | "online_support";
+export type RealtimeVoice = "cedar" | "marin";
+export type RealtimeSpeedPreset = "slow" | "normal" | "fast";
+export type RealtimeTonePreset = "calm" | "bright" | "soft" | "firm";
+export type RealtimeSpeechStylePreset = "standard" | "kansai";
+export type ServerVadSilenceDurationMs = 300 | 500 | 800 | 1200 | 1500;
+export interface RealtimeSessionStyleContext {
+  speechStyle?: RealtimeSpeechStylePreset;
+  tone?: RealtimeTonePreset;
+}
 
 export type Sentiment = "positive" | "neutral" | "negative";
 

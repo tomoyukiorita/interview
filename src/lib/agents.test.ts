@@ -13,9 +13,20 @@ function getInstructions(agent: unknown): string {
   return String((agent as { instructions?: string }).instructions ?? "");
 }
 
+async function resolveInstructions(
+  agent: unknown,
+  context: Record<string, unknown> = {}
+): Promise<string> {
+  const instructions = (agent as { instructions?: unknown }).instructions;
+  if (typeof instructions === "function") {
+    return String(await instructions({ context }, agent));
+  }
+  return String(instructions ?? "");
+}
+
 describe("interviewer character prompts", () => {
-  it("gives the main interviewer a warm but restrained style", () => {
-    const instructions = getInstructions(interviewAgent);
+  it("gives the main interviewer a warm but restrained style", async () => {
+    const instructions = await resolveInstructions(interviewAgent);
 
     expect(instructions).toContain("本日はお話を伺えることを楽しみにしていました");
     expect(instructions).toContain("そもそも");
@@ -34,13 +45,18 @@ describe("interviewer character prompts", () => {
     expect(instructions).toContain("それは素敵ですね");
     expect(instructions).toContain("受けだけで終わらせない");
     expect(instructions).toContain("同じ発話の中で次の質問まで続ける");
+    expect(instructions).toContain("セッションで指定された話し方");
+    expect(instructions).toContain("関西弁が指定されている場合");
+    expect(instructions).toContain("nextQuestionText の意味は保ったまま");
     expect(instructions).not.toContain("ほんとですね");
     expect(instructions).not.toContain("これは私の仮説なのですが");
   });
 
-  it("guides specialized agents to cover themes without overusing stock phrases", () => {
-    const leadershipInstructions = getInstructions(leadershipWellbeingAgent);
-    const organizationInstructions = getInstructions(organizationCultureAgent);
+  it("guides specialized agents to cover themes without overusing stock phrases", async () => {
+    const leadershipInstructions = await resolveInstructions(leadershipWellbeingAgent);
+    const organizationInstructions = await resolveInstructions(
+      organizationCultureAgent
+    );
 
     expect(leadershipInstructions).toContain("会社の成長や利益");
     expect(leadershipInstructions).toContain("handoff直後");
@@ -75,16 +91,46 @@ describe("interviewer character prompts", () => {
     expect(instructions).toContain("同じ言い回しを繰り返さない");
   });
 
-  it("asks for a closing message without cramming multiple stock reactions", () => {
+  it("asks for a closing message without cramming multiple stock reactions", async () => {
     const scenario = getScenarioById("general");
 
-    expect(getInstructions(closingAgent)).toContain("同じような状況の人");
-    expect(getInstructions(closingAgent)).toContain("一息で詰め込みすぎない");
+    const closingInstructions = await resolveInstructions(closingAgent);
+
+    expect(closingInstructions).toContain("同じような状況の人");
+    expect(closingInstructions).toContain("一息で詰め込みすぎない");
     expect(scenario?.topics.at(-1)?.questions[0]?.text).toContain(
       "同じような状況の人"
     );
     expect(scenario?.topics.at(-1)?.questions[0]?.text).toContain(
       "約束できること"
     );
+  });
+
+  it("adds session-selected Kansai style guidance to spoken agent prompts", async () => {
+    const instructions = await resolveInstructions(interviewAgent, {
+      speechStyle: "kansai",
+      tone: "calm",
+    });
+
+    expect(instructions).toContain("セッションで指定された話し方");
+    expect(instructions).toContain("今回は関西弁が指定されているので");
+    expect(instructions).toContain("受け、橋渡し、質問の語尾まで関西弁で統一する");
+    expect(instructions).toContain("nextQuestionText の意味は保ったまま");
+  });
+
+  it("adds concrete tone guidance so presets stay distinct during the interview", async () => {
+    const brightInstructions = await resolveInstructions(interviewAgent, {
+      speechStyle: "standard",
+      tone: "bright",
+    });
+    const firmInstructions = await resolveInstructions(interviewAgent, {
+      speechStyle: "standard",
+      tone: "firm",
+    });
+
+    expect(brightInstructions).toContain("相づちは少し明るめ");
+    expect(brightInstructions).toContain("テンポよく");
+    expect(firmInstructions).toContain("語尾はやや言い切る");
+    expect(firmInstructions).toContain("無駄なクッションを減らし");
   });
 });

@@ -5,7 +5,19 @@ import {
   getNextQuestionFromScenario,
   getScenarioById,
 } from "./interview-config";
-import type { BranchDecision, TranscriptEntry } from "./types";
+import {
+  DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
+  DEFAULT_REALTIME_TONE_PRESET,
+  getRealtimeSpeechStyleInstruction,
+  getRealtimeToneInstruction,
+  normalizeRealtimeSpeechStylePreset,
+  normalizeRealtimeTonePreset,
+} from "./realtime-settings";
+import type {
+  BranchDecision,
+  RealtimeSessionStyleContext,
+  TranscriptEntry,
+} from "./types";
 
 let interviewState = {
   currentScenarioId: "general",
@@ -29,6 +41,36 @@ export function resetInterviewState(scenarioId: string = "general") {
 
 export function getInterviewState() {
   return { ...interviewState };
+}
+
+function buildSessionStyleInstructions(
+  context?: RealtimeSessionStyleContext
+): string {
+  const speechStyle = normalizeRealtimeSpeechStylePreset(
+    context?.speechStyle ?? DEFAULT_REALTIME_SPEECH_STYLE_PRESET
+  );
+  const tone = normalizeRealtimeTonePreset(
+    context?.tone ?? DEFAULT_REALTIME_TONE_PRESET
+  );
+  const speechStyleInstruction = getRealtimeSpeechStyleInstruction(speechStyle);
+  const toneInstruction = getRealtimeToneInstruction(tone);
+  const speechStyleLine =
+    speechStyle === "kansai"
+      ? "今回は関西弁が指定されているので、受け、橋渡し、質問の語尾まで関西弁で統一する"
+      : "今回は標準語が指定されているので、受け、橋渡し、質問の語尾まで標準語で統一する";
+
+  return `## セッションで指定された話し方
+- セッションで指定された話し方を最優先する
+- ${speechStyleLine}
+- ${speechStyleInstruction}
+- ${toneInstruction}`;
+}
+
+function withSessionStyle(baseInstructions: string) {
+  return async (runContext: { context?: RealtimeSessionStyleContext }) =>
+    `${baseInstructions}
+
+${buildSessionStyleInstructions(runContext.context)}`;
 }
 
 const getNextQuestion = tool({
@@ -203,6 +245,9 @@ const editorialStyleRules = `
 - get_next_question の返り値に nextQuestionText があれば、それを次の質問文の土台として使う
 - get_next_question を呼ぶときは currentAgentName に、今の自分のエージェント名を必ず渡す
 - nextQuestionText はそのまま使うか、語尾を少し整える程度に留める
+- セッションで指定された話し方（標準語 / 関西弁など）があれば、その指定を最優先する
+- 関西弁が指定されている場合、受け・橋渡し・質問の語尾まで自然な関西弁にする
+- nextQuestionText の意味は保ったまま、セッションで指定された話し方に合わせて自然な言い回しへ整えてよい
 - shouldHandoff が true の場合、nextQuestionText は次のエージェント用の質問として扱う
 - shouldHandoff が true の場合、現在のエージェントは nextQuestionText を自分では読み上げない
 - handoff するときは短く橋渡しするだけにし、次のエージェントに引き継ぐ
@@ -216,9 +261,7 @@ const editorialStyleRules = `
 - 例文をなぞるより、自然な言い換えを優先する
 `;
 
-export const closingAgent = new RealtimeAgent({
-  name: "ClosingAgent",
-  instructions: `あなたはインタビューのクロージングを担当するエージェントです。
+const closingAgentBaseInstructions = `あなたはインタビューのクロージングを担当するエージェントです。
 以下の手順でインタビューを締めくくってください：
 
 1. 回答者にこれまでの回答への感謝を、温かく伝える
@@ -232,13 +275,15 @@ export const closingAgent = new RealtimeAgent({
 要約や短い共感は必要な場面だけに留めてください。
 感謝、要約、最後の問い、挨拶を一息で詰め込みすぎないでください。
 固定の言い回しを繰り返さず、自然な言い換えを優先してください。
-「システムエラー」「技術的な問題」等の技術的トラブルには絶対に言及しないこと。`,
+「システムエラー」「技術的な問題」等の技術的トラブルには絶対に言及しないこと。`;
+
+export const closingAgent = new RealtimeAgent<RealtimeSessionStyleContext>({
+  name: "ClosingAgent",
+  instructions: withSessionStyle(closingAgentBaseInstructions),
   tools: [recordObservation],
 });
 
-export const leadershipWellbeingAgent = new RealtimeAgent({
-  name: "LeadershipWellbeingAgent",
-  instructions: `あなたは、経営哲学と経営者自身のwell-beingを深掘りするインタビュアーです。
+const leadershipWellbeingAgentBaseInstructions = `あなたは、経営哲学と経営者自身のwell-beingを深掘りするインタビュアーです。
 
 ${editorialStyleRules}
 
@@ -258,14 +303,16 @@ ${editorialStyleRules}
 
 質問は答えを判定するのではなく、本人の実感を整理する手助けになるように進めてください。
 健康状態を診断したり、医療的な助言をしたりしてはいけません。
-「システムエラー」「技術的な問題」等の技術的トラブルには絶対に言及しないこと。会話が途切れた場合は自然に続行すること。`,
+「システムエラー」「技術的な問題」等の技術的トラブルには絶対に言及しないこと。会話が途切れた場合は自然に続行すること。`;
+
+export const leadershipWellbeingAgent = new RealtimeAgent<RealtimeSessionStyleContext>({
+  name: "LeadershipWellbeingAgent",
+  instructions: withSessionStyle(leadershipWellbeingAgentBaseInstructions),
   tools: [getNextQuestion, recordObservation],
   handoffs: [closingAgent],
 });
 
-export const organizationCultureAgent = new RealtimeAgent({
-  name: "OrganizationCultureAgent",
-  instructions: `あなたは、組織文化・採用・多様性・共創を深掘りするインタビュアーです。
+const organizationCultureAgentBaseInstructions = `あなたは、組織文化・採用・多様性・共創を深掘りするインタビュアーです。
 
 ${editorialStyleRules}
 
@@ -284,7 +331,11 @@ ${editorialStyleRules}
 - get_next_questionツールを使って次の質問を決定する
 
 自然で温かい雰囲気を保ちながら、組織の実態が見える具体的な質問を心がけてください。
-「システムエラー」「技術的な問題」等の技術的トラブルには絶対に言及しないこと。会話が途切れた場合は自然に続行すること。`,
+「システムエラー」「技術的な問題」等の技術的トラブルには絶対に言及しないこと。会話が途切れた場合は自然に続行すること。`;
+
+export const organizationCultureAgent = new RealtimeAgent<RealtimeSessionStyleContext>({
+  name: "OrganizationCultureAgent",
+  instructions: withSessionStyle(organizationCultureAgentBaseInstructions),
   tools: [getNextQuestion, recordObservation],
   handoffs: [closingAgent],
 });
@@ -294,9 +345,7 @@ ${editorialStyleRules}
 leadershipWellbeingAgent.handoffs = [organizationCultureAgent, closingAgent];
 organizationCultureAgent.handoffs = [leadershipWellbeingAgent, closingAgent];
 
-export const interviewAgent = new RealtimeAgent({
-  name: "InterviewAgent",
-  instructions: `あなたは、経営者向けwell-beingインタビューを行う聞き手です。自動インタビューモードで動作しています。
+const interviewAgentBaseInstructions = `あなたは、経営者向けwell-beingインタビューを行う聞き手です。自動インタビューモードで動作しています。
 
 ${editorialStyleRules}
 
@@ -333,12 +382,16 @@ ${editorialStyleRules}
 - 沈黙が長い場合は、質問を言い換えるか補足する
 - 回答者を評価したり、正解を求めたりしない
 - 健康状態を診断したり、医療的な助言をしたりしない
-- 「システムエラー」「技術的な問題」「データ処理の不具合」「システム調整」等、技術的トラブルに言及してはいけない。あなたはシステムの状態を知らない。会話が途切れた場合は、自然にインタビューを続行すること`,
+- 「システムエラー」「技術的な問題」「データ処理の不具合」「システム調整」等、技術的トラブルに言及してはいけない。あなたはシステムの状態を知らない。会話が途切れた場合は、自然にインタビューを続行すること`;
+
+export const interviewAgent = new RealtimeAgent<RealtimeSessionStyleContext>({
+  name: "InterviewAgent",
+  instructions: withSessionStyle(interviewAgentBaseInstructions),
   tools: [getNextQuestion, recordObservation],
   handoffs: [leadershipWellbeingAgent, organizationCultureAgent, closingAgent],
 });
 
-export const supportAgent = new RealtimeAgent({
+export const supportAgent = new RealtimeAgent<RealtimeSessionStyleContext>({
   name: "SupportAgent",
   instructions: `あなたはインタビューサポートAIです。サポートモードで動作しています。
 
@@ -378,6 +431,8 @@ export const supportAgent = new RealtimeAgent({
   tools: [suggestFollowUp, recordObservation],
 });
 
-export function getAgentForMode(mode: "auto" | "support" | "online_support") {
+export function getAgentForMode(
+  mode: "auto" | "support" | "online_support"
+): RealtimeAgent<RealtimeSessionStyleContext> {
   return mode === "auto" ? interviewAgent : supportAgent;
 }

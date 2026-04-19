@@ -35,6 +35,7 @@ yarn-error.log*
 
 # interview result data
 /data/results/
+.firecrawl/
 
 # vercel
 .vercel

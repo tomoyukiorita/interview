@@ -10,7 +10,17 @@ import { AnalysisPanel } from "./AnalysisPanel";
 import { SuggestionPanel } from "./SuggestionPanel";
 import { EmotionIndicator } from "./EmotionIndicator";
 import { cn } from "@/lib/cn";
-import type { InterviewMode, TranscriptEntry, SpeechAudioMetrics, EmotionState } from "@/lib/types";
+import type {
+  InterviewMode,
+  RealtimeSpeedPreset,
+  RealtimeSpeechStylePreset,
+  RealtimeTonePreset,
+  TranscriptEntry,
+  SpeechAudioMetrics,
+  EmotionState,
+  RealtimeVoice,
+  ServerVadSilenceDurationMs,
+} from "@/lib/types";
 import {
   Mic,
   MicOff,
@@ -24,12 +34,22 @@ import {
 interface InterviewRoomProps {
   mode: InterviewMode;
   scenarioId: string;
+  voice: RealtimeVoice;
+  speed: RealtimeSpeedPreset;
+  speechStyle: RealtimeSpeechStylePreset;
+  tone: RealtimeTonePreset;
+  silenceDurationMs: ServerVadSilenceDurationMs;
   onEnd: () => void;
 }
 
 export function InterviewRoom({
   mode,
   scenarioId,
+  voice,
+  speed,
+  speechStyle,
+  tone,
+  silenceDurationMs,
   onEnd,
 }: InterviewRoomProps) {
   const [session, sessionActions] = useRealtimeSession();
@@ -115,14 +135,27 @@ export function InterviewRoom({
       const intervieweeStream = await tabCaptureActions.startCapture();
       if (!intervieweeStream) return;
 
-      await sessionActions.connect(mode, scenarioId, { intervieweeStream });
+      await sessionActions.connect(mode, scenarioId, {
+        intervieweeStream,
+        voice,
+        speed,
+        speechStyle,
+        tone,
+        silenceDurationMs,
+      });
       setStartTime(Date.now());
 
       setTimeout(() => {
         analysisActions.startAnalysis(intervieweeStream);
       }, 500);
     } else {
-      await sessionActions.connect(mode, scenarioId);
+      await sessionActions.connect(mode, scenarioId, {
+        voice,
+        speed,
+        speechStyle,
+        tone,
+        silenceDurationMs,
+      });
       setStartTime(Date.now());
 
       setTimeout(() => {
@@ -132,7 +165,19 @@ export function InterviewRoom({
         }
       }, 1000);
     }
-  }, [mode, scenarioId, sessionActions, analysisActions, tabCaptureActions, isOnlineSupport]);
+  }, [
+    mode,
+    scenarioId,
+    voice,
+    speed,
+    speechStyle,
+    tone,
+    silenceDurationMs,
+    sessionActions,
+    analysisActions,
+    tabCaptureActions,
+    isOnlineSupport,
+  ]);
 
   const handleDisconnect = useCallback(async () => {
     analysisActions.stopAnalysis();

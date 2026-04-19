@@ -4,6 +4,27 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 import {
+  DEFAULT_REALTIME_VOICE,
+  REALTIME_VOICES,
+} from "@/lib/realtime-voice";
+import {
+  DEFAULT_REALTIME_SPEED_PRESET,
+  DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
+  DEFAULT_REALTIME_TONE_PRESET,
+  DEFAULT_SERVER_VAD_SILENCE_DURATION_MS,
+  REALTIME_SPEED_PRESETS,
+  REALTIME_SPEECH_STYLE_PRESETS,
+  REALTIME_TONE_PRESETS,
+  SERVER_VAD_SILENCE_OPTIONS,
+} from "@/lib/realtime-settings";
+import type {
+  RealtimeSpeedPreset,
+  RealtimeSpeechStylePreset,
+  RealtimeTonePreset,
+  RealtimeVoice,
+  ServerVadSilenceDurationMs,
+} from "@/lib/types";
+import {
   Mic,
   Bot,
   Users,
@@ -57,11 +78,26 @@ export default function Home() {
   const [selectedMode, setSelectedMode] = useState<
     "auto" | "support" | "online_support"
   >("auto");
+  const [selectedVoice, setSelectedVoice] =
+    useState<RealtimeVoice>(DEFAULT_REALTIME_VOICE);
+  const [selectedSpeed, setSelectedSpeed] =
+    useState<RealtimeSpeedPreset>(DEFAULT_REALTIME_SPEED_PRESET);
+  const [selectedSpeechStyle, setSelectedSpeechStyle] =
+    useState<RealtimeSpeechStylePreset>(DEFAULT_REALTIME_SPEECH_STYLE_PRESET);
+  const [selectedTone, setSelectedTone] =
+    useState<RealtimeTonePreset>(DEFAULT_REALTIME_TONE_PRESET);
+  const [selectedSilenceDurationMs, setSelectedSilenceDurationMs] =
+    useState<ServerVadSilenceDurationMs>(DEFAULT_SERVER_VAD_SILENCE_DURATION_MS);
 
   const handleStart = () => {
     const params = new URLSearchParams({
       mode: selectedMode,
       scenario: selectedScenario,
+      voice: selectedVoice,
+      speed: selectedSpeed,
+      speechStyle: selectedSpeechStyle,
+      tone: selectedTone,
+      silenceDurationMs: String(selectedSilenceDurationMs),
     });
     router.push(`/interview?${params.toString()}`);
   };
@@ -250,6 +286,153 @@ export default function Home() {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+            音声
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {REALTIME_VOICES.map((voice) => (
+              <button
+                key={voice}
+                onClick={() => setSelectedVoice(voice)}
+                className={cn(
+                  "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                  selectedVoice === voice
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                )}
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="font-medium text-foreground text-sm capitalize">
+                      {voice}
+                    </div>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {voice === "cedar" ? "男性" : "女性"}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {voice === "cedar"
+                      ? "落ち着いた男性の声質です。現在の既定音声で、自然で安定した話し方です。"
+                      : "やわらかい女性の声質です。少し雰囲気を変えて試したいときに向いています。"}
+                  </div>
+                </div>
+                {selectedVoice === voice && (
+                  <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+            話すスピード
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {REALTIME_SPEED_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => setSelectedSpeed(preset.id)}
+                className={cn(
+                  "w-full rounded-lg border p-4 text-left transition-colors",
+                  selectedSpeed === preset.id
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                )}
+              >
+                <div className="font-medium text-foreground text-sm">
+                  {preset.label}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {preset.description}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+            話し方のトーン
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {REALTIME_TONE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => setSelectedTone(preset.id)}
+                className={cn(
+                  "w-full rounded-lg border p-4 text-left transition-colors",
+                  selectedTone === preset.id
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                )}
+              >
+                <div className="font-medium text-foreground text-sm">
+                  {preset.label}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {preset.description}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+            話し方
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {REALTIME_SPEECH_STYLE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => setSelectedSpeechStyle(preset.id)}
+                className={cn(
+                  "w-full rounded-lg border p-4 text-left transition-colors",
+                  selectedSpeechStyle === preset.id
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                )}
+              >
+                <div className="font-medium text-foreground text-sm">
+                  {preset.label}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {preset.description}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+            発話終わり判定
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {SERVER_VAD_SILENCE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setSelectedSilenceDurationMs(option.value)}
+                className={cn(
+                  "w-full rounded-lg border p-4 text-left transition-colors",
+                  selectedSilenceDurationMs === option.value
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                )}
+              >
+                <div className="font-medium text-foreground text-sm">
+                  {option.label}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {option.description}
+                </div>
+              </button>
+            ))}
           </div>
         </div>
 

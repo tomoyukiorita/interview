@@ -1,7 +1,32 @@
 "use client";
 
 import { useCallback, useRef, useState, useEffect } from "react";
-import type { InterviewMode, TranscriptEntry } from "@/lib/types";
+import { DEFAULT_REALTIME_VOICE, normalizeRealtimeVoice } from "@/lib/realtime-voice";
+import {
+  buildMicrophoneConstraints,
+  buildRealtimeInputAudioConfig,
+} from "@/lib/realtime-audio-config";
+import {
+  DEFAULT_REALTIME_SPEED_PRESET,
+  DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
+  DEFAULT_REALTIME_TONE_PRESET,
+  DEFAULT_SERVER_VAD_SILENCE_DURATION_MS,
+  getRealtimeSpeedValue,
+  normalizeRealtimeSpeedPreset,
+  normalizeRealtimeSpeechStylePreset,
+  normalizeRealtimeTonePreset,
+  normalizeServerVadSilenceDurationMs,
+} from "@/lib/realtime-settings";
+import type {
+  InterviewMode,
+  RealtimeSpeedPreset,
+  RealtimeSpeechStylePreset,
+  RealtimeSessionStyleContext,
+  RealtimeTonePreset,
+  RealtimeVoice,
+  ServerVadSilenceDurationMs,
+  TranscriptEntry,
+} from "@/lib/types";
 
 export interface AiSuggestion {
   id: string;
@@ -26,6 +51,11 @@ export interface RealtimeSessionState {
 
 interface ConnectOptions {
   intervieweeStream?: MediaStream;
+  voice?: RealtimeVoice;
+  speed?: RealtimeSpeedPreset;
+  speechStyle?: RealtimeSpeechStylePreset;
+  tone?: RealtimeTonePreset;
+  silenceDurationMs?: ServerVadSilenceDurationMs;
 }
 
 interface RealtimeSessionActions {
@@ -36,7 +66,8 @@ interface RealtimeSessionActions {
   isMuted: () => boolean;
 }
 
-type RealtimeSessionType = import("@openai/agents/realtime").RealtimeSession;
+type RealtimeSessionType =
+  import("@openai/agents/realtime").RealtimeSession<RealtimeSessionStyleContext>;
 type RealtimeItemType = import("@openai/agents/realtime").RealtimeItem;
 type RealtimeMessageItemType =
   import("@openai/agents/realtime").RealtimeMessageItem;
@@ -203,7 +234,7 @@ export function useRealtimeSession(): [
         ] = await Promise.all([
           import("@openai/agents/realtime"),
           import("@/lib/agents"),
-          navigator.mediaDevices.getUserMedia({ audio: true }),
+          navigator.mediaDevices.getUserMedia(buildMicrophoneConstraints()),
         ]);
         agentsModule.resetInterviewState(scenarioId);
         const agent = agentsModule.getAgentForMode(mode);
@@ -235,25 +266,41 @@ export function useRealtimeSession(): [
           mode === "support" || mode === "online_support"
             ? "gpt-4o-transcribe-diarize"
             : "gpt-4o-transcribe";
+        const voice = normalizeRealtimeVoice(
+          options?.voice ?? DEFAULT_REALTIME_VOICE
+        );
+        const speedPreset = normalizeRealtimeSpeedPreset(
+          options?.speed ?? DEFAULT_REALTIME_SPEED_PRESET
+        );
+        const speechStylePreset = normalizeRealtimeSpeechStylePreset(
+          options?.speechStyle ?? DEFAULT_REALTIME_SPEECH_STYLE_PRESET
+        );
+        const tonePreset = normalizeRealtimeTonePreset(
+          options?.tone ?? DEFAULT_REALTIME_TONE_PRESET
+        );
+        const silenceDurationMs = normalizeServerVadSilenceDurationMs(
+          String(
+            options?.silenceDurationMs ?? DEFAULT_SERVER_VAD_SILENCE_DURATION_MS
+          )
+        );
+        const speed = getRealtimeSpeedValue(speedPreset);
 
         const session = new RealtimeSession(agent, {
           model: "gpt-realtime-1.5",
           transport,
+          context: {
+            speechStyle: speechStylePreset,
+            tone: tonePreset,
+          },
           config: {
             audio: {
-              input: {
-                transcription: {
-                  model: transcriptionModel,
-                },
-                turnDetection: {
-                  type: "server_vad",
-                  threshold: 0.5,
-                  prefixPaddingMs: 300,
-                  silenceDurationMs: 700,
-                },
-              },
+              input: buildRealtimeInputAudioConfig({
+                transcriptionModel,
+                silenceDurationMs,
+              }),
               output: {
-                voice: "cedar",
+                voice,
+                speed,
               },
             },
           },
