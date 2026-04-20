@@ -9,6 +9,7 @@ import {
   REALTIME_SPEECH_STYLE_PRESETS,
   REALTIME_TONE_PRESETS,
   SERVER_VAD_SILENCE_OPTIONS,
+  getRealtimeSpeedInstruction,
   getRealtimeSpeedValue,
   getRealtimeSpeechStyleInstruction,
   getRealtimeToneInstruction,
@@ -68,6 +69,9 @@ describe("realtime settings helpers", () => {
     expect(getRealtimeSpeedValue("slow")).toBe(0.9);
     expect(getRealtimeSpeedValue("normal")).toBe(1);
     expect(getRealtimeSpeedValue("fast")).toBe(1.15);
+    expect(getRealtimeSpeedInstruction("slow")).toContain("少しゆっくり");
+    expect(getRealtimeSpeedInstruction("normal")).toContain("標準的");
+    expect(getRealtimeSpeedInstruction("fast")).toContain("少し速め");
 
     expect(getRealtimeToneInstruction("calm")).toContain("間を急がず");
     expect(getRealtimeToneInstruction("calm")).toContain("抑揚は控えめ");

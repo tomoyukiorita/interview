@@ -10,24 +10,30 @@ export const REALTIME_SPEED_PRESETS: Array<{
   label: string;
   description: string;
   value: number;
+  instruction: string;
 }> = [
   {
     id: "slow",
     label: "ゆっくり",
     description: "落ち着いて丁寧に聞こえる速度です。",
     value: 0.9,
+    instruction:
+      "話すテンポは少しゆっくりめにし、間もやや丁寧に取ってください。",
   },
   {
     id: "normal",
     label: "標準",
     description: "自然でバランスのよい速度です。",
     value: 1,
+    instruction: "話すテンポは標準的で自然な速さにしてください。",
   },
   {
     id: "fast",
     label: "速め",
     description: "テンポよく軽快に進めたいとき向けです。",
     value: 1.15,
+    instruction:
+      "話すテンポは少し速めにしつつ、聞き取りやすさは崩さないでください。",
   },
 ];
 
@@ -169,6 +175,16 @@ export function getRealtimeSpeedValue(preset: RealtimeSpeedPreset): number {
   );
 }
 
+export function getRealtimeSpeedInstruction(
+  preset: RealtimeSpeedPreset
+): string {
+  return (
+    REALTIME_SPEED_PRESETS.find((candidate) => candidate.id === preset)
+      ?.instruction ??
+    REALTIME_SPEED_PRESET_INSTRUCTION_MAP[DEFAULT_REALTIME_SPEED_PRESET]
+  );
+}
+
 export function getRealtimeToneInstruction(
   preset: RealtimeTonePreset
 ): string {
@@ -194,6 +210,15 @@ const REALTIME_SPEED_PRESET_MAP: Record<RealtimeSpeedPreset, number> = {
   normal: 1,
   fast: 1.15,
 };
+
+const REALTIME_SPEED_PRESET_INSTRUCTION_MAP: Record<RealtimeSpeedPreset, string> =
+  {
+    slow:
+      "話すテンポは少しゆっくりめにし、間もやや丁寧に取ってください。",
+    normal: "話すテンポは標準的で自然な速さにしてください。",
+    fast:
+      "話すテンポは少し速めにしつつ、聞き取りやすさは崩さないでください。",
+  };
 
 const REALTIME_TONE_PRESET_MAP: Record<RealtimeTonePreset, string> = {
   calm:

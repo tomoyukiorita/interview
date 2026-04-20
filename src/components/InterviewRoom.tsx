@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRealtimeSession } from "@/hooks/useRealtimeSession";
+import { useInterviewSession } from "@/hooks/useInterviewSession";
 import { useAudioAnalysis } from "@/hooks/useAudioAnalysis";
 import { useTabCapture } from "@/hooks/useTabCapture";
 import { AudioVisualizer } from "./AudioVisualizer";
@@ -10,15 +10,18 @@ import { AnalysisPanel } from "./AnalysisPanel";
 import { SuggestionPanel } from "./SuggestionPanel";
 import { EmotionIndicator } from "./EmotionIndicator";
 import { cn } from "@/lib/cn";
+import { getGeminiLiveConnectionUi } from "@/lib/gemini-live-connection";
+import { getInterviewProviderLabel } from "@/lib/interview-provider";
 import type {
+  InterviewProvider,
   InterviewMode,
+  InterviewVoice,
   RealtimeSpeedPreset,
   RealtimeSpeechStylePreset,
   RealtimeTonePreset,
   TranscriptEntry,
   SpeechAudioMetrics,
   EmotionState,
-  RealtimeVoice,
   ServerVadSilenceDurationMs,
 } from "@/lib/types";
 import {
@@ -29,12 +32,14 @@ import {
   AlertCircle,
   Loader2,
   Monitor,
+  RefreshCw,
 } from "lucide-react";
 
 interface InterviewRoomProps {
+  provider: InterviewProvider;
   mode: InterviewMode;
   scenarioId: string;
-  voice: RealtimeVoice;
+  voice: InterviewVoice;
   speed: RealtimeSpeedPreset;
   speechStyle: RealtimeSpeechStylePreset;
   tone: RealtimeTonePreset;
@@ -43,6 +48,7 @@ interface InterviewRoomProps {
 }
 
 export function InterviewRoom({
+  provider,
   mode,
   scenarioId,
   voice,
@@ -52,7 +58,7 @@ export function InterviewRoom({
   silenceDurationMs,
   onEnd,
 }: InterviewRoomProps) {
-  const [session, sessionActions] = useRealtimeSession();
+  const [session, sessionActions] = useInterviewSession(provider);
   const [analysis, analysisActions] = useAudioAnalysis();
   const [tabCapture, tabCaptureActions] = useTabCapture();
   const [isMuted, setIsMuted] = useState(false);
@@ -65,6 +71,18 @@ export function InterviewRoom({
   const processedMetricsRef = useRef<Set<string>>(new Set());
   const isOnlineSupport = mode === "online_support";
   const showEmotion = mode !== undefined;
+  const hasInterviewStarted = startTime !== null || session.transcript.length > 0;
+  const geminiConnectionUi =
+    provider === "gemini"
+      ? getGeminiLiveConnectionUi({
+          isConnected: session.isConnected,
+          isConnecting: session.isConnecting,
+          isReconnecting: session.isReconnecting,
+          resumeFailed: session.resumeFailed,
+          goAwayTimeLeft: session.goAwayTimeLeft,
+          hasResumableSession: session.hasResumableSession,
+        })
+      : null;
 
   useEffect(() => {
     if (!startTime) return;
@@ -222,17 +240,28 @@ export function InterviewRoom({
               ? "オンラインサポート"
               : "サポートモード"}
           </h1>
+          <span className="text-xs text-muted-foreground">
+            Type: {getInterviewProviderLabel(provider)}
+          </span>
           <span
             className={cn(
               "text-xs px-2 py-0.5 rounded-full",
-              session.isConnected
+              provider === "gemini" && geminiConnectionUi
+                ? geminiConnectionUi.statusTone === "success"
+                  ? "bg-success/10 text-success"
+                  : geminiConnectionUi.statusTone === "error"
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-warning/10 text-warning"
+                : session.isConnected
                 ? "bg-success/10 text-success"
                 : session.isConnecting
                 ? "bg-warning/10 text-warning"
                 : "bg-muted text-muted-foreground"
             )}
           >
-            {session.isConnected
+            {provider === "gemini" && geminiConnectionUi
+              ? geminiConnectionUi.statusLabel
+              : session.isConnected
               ? "接続中"
               : session.isConnecting
               ? "接続中..."
@@ -289,8 +318,40 @@ export function InterviewRoom({
         </div>
       )}
 
+      {provider === "gemini" && geminiConnectionUi?.notice && (
+        <div
+          className={cn(
+            "flex items-center gap-3 px-6 py-2 text-sm border-b border-border",
+            geminiConnectionUi.statusTone === "error"
+              ? "bg-destructive/10 text-destructive"
+              : "bg-warning/10 text-warning"
+          )}
+        >
+          {session.isReconnecting ? (
+            <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0" />
+          )}
+          <div className="flex-1">
+            <p>{geminiConnectionUi.notice}</p>
+            {geminiConnectionUi.detail && (
+              <p className="text-xs opacity-80">{geminiConnectionUi.detail}</p>
+            )}
+          </div>
+          {geminiConnectionUi.canResume && (
+            <button
+              onClick={() => void sessionActions.resume()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium hover:bg-background/40 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              再開
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Main content */}
-      {!session.isConnected && !session.isConnecting ? (
+      {!session.isConnected && !session.isConnecting && !hasInterviewStarted ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-6 max-w-lg">
             <div className="space-y-2">
@@ -341,7 +402,7 @@ export function InterviewRoom({
             </button>
           </div>
         </div>
-      ) : session.isConnecting ? (
+      ) : session.isConnecting && !hasInterviewStarted ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
             <Loader2 className="w-8 h-8 animate-spin text-accent mx-auto" />

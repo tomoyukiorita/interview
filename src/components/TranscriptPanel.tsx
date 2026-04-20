@@ -69,12 +69,15 @@ export function TranscriptPanel({
   className,
 }: TranscriptPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const orderedTranscript = [...transcript].sort(
+    (a, b) => a.timestamp - b.timestamp
+  );
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcript]);
+  }, [orderedTranscript]);
 
   return (
     <div
@@ -108,12 +111,12 @@ export function TranscriptPanel({
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 py-3 space-y-3"
       >
-        {transcript.length === 0 ? (
+        {orderedTranscript.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
             インタビューが始まると書き起こしが表示されます
           </p>
         ) : (
-          transcript.map((entry) => (
+          orderedTranscript.map((entry) => (
             <div
               key={entry.id}
               className={cn(

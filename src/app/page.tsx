@@ -8,6 +8,15 @@ import {
   REALTIME_VOICES,
 } from "@/lib/realtime-voice";
 import {
+  DEFAULT_GEMINI_LIVE_VOICE,
+  GEMINI_LIVE_VOICES,
+} from "@/lib/gemini-voice";
+import {
+  DEFAULT_INTERVIEW_PROVIDER,
+  getInterviewProviderLabel,
+  INTERVIEW_PROVIDERS,
+} from "@/lib/interview-provider";
+import {
   DEFAULT_REALTIME_SPEED_PRESET,
   DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
   DEFAULT_REALTIME_TONE_PRESET,
@@ -18,6 +27,8 @@ import {
   SERVER_VAD_SILENCE_OPTIONS,
 } from "@/lib/realtime-settings";
 import type {
+  GeminiLiveVoice,
+  InterviewProvider,
   RealtimeSpeedPreset,
   RealtimeSpeechStylePreset,
   RealtimeTonePreset,
@@ -74,12 +85,17 @@ const features = [
 
 export default function Home() {
   const router = useRouter();
+  const [selectedProvider, setSelectedProvider] = useState<InterviewProvider>(
+    DEFAULT_INTERVIEW_PROVIDER
+  );
   const [selectedScenario, setSelectedScenario] = useState("general");
   const [selectedMode, setSelectedMode] = useState<
     "auto" | "support" | "online_support"
   >("auto");
-  const [selectedVoice, setSelectedVoice] =
+  const [selectedOpenAiVoice, setSelectedOpenAiVoice] =
     useState<RealtimeVoice>(DEFAULT_REALTIME_VOICE);
+  const [selectedGeminiVoice, setSelectedGeminiVoice] =
+    useState<GeminiLiveVoice>(DEFAULT_GEMINI_LIVE_VOICE);
   const [selectedSpeed, setSelectedSpeed] =
     useState<RealtimeSpeedPreset>(DEFAULT_REALTIME_SPEED_PRESET);
   const [selectedSpeechStyle, setSelectedSpeechStyle] =
@@ -91,9 +107,13 @@ export default function Home() {
 
   const handleStart = () => {
     const params = new URLSearchParams({
-      mode: selectedMode,
+      provider: selectedProvider,
+      mode: selectedProvider === "gemini" ? "auto" : selectedMode,
       scenario: selectedScenario,
-      voice: selectedVoice,
+      voice:
+        selectedProvider === "gemini"
+          ? selectedGeminiVoice
+          : selectedOpenAiVoice,
       speed: selectedSpeed,
       speechStyle: selectedSpeechStyle,
       tone: selectedTone,
@@ -156,6 +176,40 @@ export default function Home() {
           インタビュー設定
         </h2>
 
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+            Type
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {INTERVIEW_PROVIDERS.map((provider) => (
+              <button
+                key={provider}
+                onClick={() => {
+                  setSelectedProvider(provider);
+                  if (provider === "gemini") {
+                    setSelectedMode("auto");
+                  }
+                }}
+                className={cn(
+                  "w-full rounded-lg border p-4 text-left transition-colors",
+                  selectedProvider === provider
+                    ? "border-accent bg-accent/5"
+                    : "border-border bg-card hover:border-muted-foreground/30"
+                )}
+              >
+                <div className="font-medium text-foreground text-sm">
+                  {getInterviewProviderLabel(provider)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {provider === "openai"
+                    ? "現在の標準版です。`cedar` / `marin` を選んで音声インタビューできます。"
+                    : "新しいライブ版です。まずは自動インタビューのみ対応します。"}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Mode selection */}
           <div>
@@ -192,12 +246,19 @@ export default function Home() {
               </button>
 
               <button
-                onClick={() => setSelectedMode("support")}
+                onClick={() =>
+                  selectedProvider === "gemini"
+                    ? undefined
+                    : setSelectedMode("support")
+                }
+                disabled={selectedProvider === "gemini"}
                 className={cn(
                   "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
                   selectedMode === "support"
                     ? "border-accent bg-accent/5"
-                    : "border-border bg-card hover:border-muted-foreground/30"
+                    : "border-border bg-card hover:border-muted-foreground/30",
+                  selectedProvider === "gemini" &&
+                    "cursor-not-allowed opacity-60 hover:border-border"
                 )}
               >
                 <Users
@@ -220,12 +281,19 @@ export default function Home() {
               </button>
 
               <button
-                onClick={() => setSelectedMode("online_support")}
+                onClick={() =>
+                  selectedProvider === "gemini"
+                    ? undefined
+                    : setSelectedMode("online_support")
+                }
+                disabled={selectedProvider === "gemini"}
                 className={cn(
                   "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
                   selectedMode === "online_support"
                     ? "border-accent bg-accent/5"
-                    : "border-border bg-card hover:border-muted-foreground/30"
+                    : "border-border bg-card hover:border-muted-foreground/30",
+                  selectedProvider === "gemini" &&
+                    "cursor-not-allowed opacity-60 hover:border-border"
                 )}
               >
                 <Monitor
@@ -294,37 +362,75 @@ export default function Home() {
             音声
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {REALTIME_VOICES.map((voice) => (
-              <button
-                key={voice}
-                onClick={() => setSelectedVoice(voice)}
-                className={cn(
-                  "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
-                  selectedVoice === voice
-                    ? "border-accent bg-accent/5"
-                    : "border-border bg-card hover:border-muted-foreground/30"
-                )}
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <div className="font-medium text-foreground text-sm capitalize">
-                      {voice}
+            {selectedProvider === "openai"
+              ? REALTIME_VOICES.map((voice) => (
+                  <button
+                    key={voice}
+                    onClick={() => setSelectedOpenAiVoice(voice)}
+                    className={cn(
+                      "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                      selectedOpenAiVoice === voice
+                        ? "border-accent bg-accent/5"
+                        : "border-border bg-card hover:border-muted-foreground/30"
+                    )}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-foreground text-sm capitalize">
+                          {voice}
+                        </div>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {voice === "cedar" ? "男性" : "女性"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {voice === "cedar"
+                          ? "落ち着いた男性の声質です。現在の既定音声で、自然で安定した話し方です。"
+                          : "やわらかい女性の声質です。少し雰囲気を変えて試したいときに向いています。"}
+                      </div>
                     </div>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      {voice === "cedar" ? "男性" : "女性"}
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {voice === "cedar"
-                      ? "落ち着いた男性の声質です。現在の既定音声で、自然で安定した話し方です。"
-                      : "やわらかい女性の声質です。少し雰囲気を変えて試したいときに向いています。"}
-                  </div>
-                </div>
-                {selectedVoice === voice && (
-                  <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
-                )}
-              </button>
-            ))}
+                    {selectedOpenAiVoice === voice && (
+                      <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
+                    )}
+                  </button>
+                ))
+              : GEMINI_LIVE_VOICES.map((voice) => (
+                  <button
+                    key={voice}
+                    onClick={() => setSelectedGeminiVoice(voice)}
+                    className={cn(
+                      "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                      selectedGeminiVoice === voice
+                        ? "border-accent bg-accent/5"
+                        : "border-border bg-card hover:border-muted-foreground/30"
+                    )}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-foreground text-sm">
+                          {voice}
+                        </div>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {voice === "Kore"
+                            ? "Firm"
+                            : voice === "Puck"
+                            ? "Upbeat"
+                            : "Breezy"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {voice === "Kore"
+                          ? "芯のある落ち着いた話し方です。経営者向けインタビューに合わせやすい firm 系です。"
+                          : voice === "Puck"
+                          ? "少し明るく軽快な印象です。前向きな空気を出したいときに向いています。"
+                          : "やわらかく軽い空気感です。やさしい立ち上がりで話したいときに向いています。"}
+                      </div>
+                    </div>
+                    {selectedGeminiVoice === voice && (
+                      <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
+                    )}
+                  </button>
+                ))}
           </div>
         </div>
 

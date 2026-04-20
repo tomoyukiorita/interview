@@ -18,12 +18,12 @@ import {
   normalizeServerVadSilenceDurationMs,
 } from "@/lib/realtime-settings";
 import type {
+  InterviewVoice,
   InterviewMode,
   RealtimeSpeedPreset,
   RealtimeSpeechStylePreset,
   RealtimeSessionStyleContext,
   RealtimeTonePreset,
-  RealtimeVoice,
   ServerVadSilenceDurationMs,
   TranscriptEntry,
 } from "@/lib/types";
@@ -41,26 +41,31 @@ export interface AiSuggestion {
 export interface RealtimeSessionState {
   isConnected: boolean;
   isConnecting: boolean;
+  isReconnecting: boolean;
   isSpeaking: boolean;
   currentAgent: string;
   mode: InterviewMode | null;
   transcript: TranscriptEntry[];
   aiSuggestions: AiSuggestion[];
   error: string | null;
+  resumeFailed: boolean;
+  goAwayTimeLeft: string | null;
+  hasResumableSession: boolean;
 }
 
-interface ConnectOptions {
+export interface ConnectOptions {
   intervieweeStream?: MediaStream;
-  voice?: RealtimeVoice;
+  voice?: InterviewVoice;
   speed?: RealtimeSpeedPreset;
   speechStyle?: RealtimeSpeechStylePreset;
   tone?: RealtimeTonePreset;
   silenceDurationMs?: ServerVadSilenceDurationMs;
 }
 
-interface RealtimeSessionActions {
+export interface RealtimeSessionActions {
   connect: (mode: InterviewMode, scenarioId: string, options?: ConnectOptions) => Promise<void>;
   disconnect: () => void;
+  resume: () => Promise<void>;
   getMediaStream: () => MediaStream | null;
   mute: (muted: boolean) => void;
   isMuted: () => boolean;
@@ -179,12 +184,16 @@ export function useRealtimeSession(): [
   const [state, setState] = useState<RealtimeSessionState>({
     isConnected: false,
     isConnecting: false,
+    isReconnecting: false,
     isSpeaking: false,
     currentAgent: "",
     mode: null,
     transcript: [],
     aiSuggestions: [],
     error: null,
+    resumeFailed: false,
+    goAwayTimeLeft: null,
+    hasResumableSession: false,
   });
 
   const sessionRef = useRef<RealtimeSessionType | null>(null);
@@ -536,12 +545,16 @@ export function useRealtimeSession(): [
     setState({
       isConnected: false,
       isConnecting: false,
+      isReconnecting: false,
       isSpeaking: false,
       currentAgent: "",
       mode: null,
       transcript: [],
       aiSuggestions: [],
       error: null,
+      resumeFailed: false,
+      goAwayTimeLeft: null,
+      hasResumableSession: false,
     });
   }, []);
 
@@ -555,8 +568,12 @@ export function useRealtimeSession(): [
     return sessionRef.current?.muted ?? false;
   }, []);
 
+  const resume = useCallback(async () => {
+    return Promise.resolve();
+  }, []);
+
   return [
     state,
-    { connect, disconnect, getMediaStream, mute, isMuted },
+    { connect, disconnect, resume, getMediaStream, mute, isMuted },
   ];
 }
