@@ -415,7 +415,11 @@ export default function Home() {
                             ? "Firm"
                             : voice === "Puck"
                             ? "Upbeat"
-                            : "Breezy"}
+                            : voice === "Aoede"
+                            ? "Breezy"
+                            : voice === "Orus"
+                            ? "Firm"
+                            : "Youthful"}
                         </span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
@@ -423,7 +427,11 @@ export default function Home() {
                           ? "芯のある落ち着いた話し方です。経営者向けインタビューに合わせやすい firm 系です。"
                           : voice === "Puck"
                           ? "少し明るく軽快な印象です。前向きな空気を出したいときに向いています。"
-                          : "やわらかく軽い空気感です。やさしい立ち上がりで話したいときに向いています。"}
+                          : voice === "Aoede"
+                          ? "やわらかく軽い空気感です。やさしい立ち上がりで話したいときに向いています。"
+                          : voice === "Orus"
+                          ? "落ち着いた男性寄りの firm 系です。安定感を出したい経営者向けインタビューに向いています。"
+                          : "若めで軽やかな印象の声です。親しみやすく明るい雰囲気で進めたいときに向いています。"}
                       </div>
                     </div>
                     {selectedGeminiVoice === voice && (

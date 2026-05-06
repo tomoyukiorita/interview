@@ -17,6 +17,7 @@ import {
   buildGeminiInterviewSystemInstruction,
   createGeminiInterviewState,
   getGeminiInitialPrompt,
+  getGeminiResumePrompt,
   runGeminiNextQuestion,
   type GeminiInterviewState,
   type GeminiInterviewToolArgs,
@@ -26,7 +27,12 @@ import {
   normalizeGeminiLiveVoice,
 } from "@/lib/gemini-voice";
 import {
+  DEFAULT_GEMINI_THINKING_LEVEL,
+  type GeminiThinkingLevel,
+} from "@/lib/gemini-thinking";
+import {
   getGeminiUnexpectedCloseAction,
+  getGeminiResumePromptAction,
   parseGeminiGoAwaySeconds,
 } from "@/lib/gemini-live-connection";
 import type {
@@ -34,6 +40,7 @@ import type {
   LiveServerMessage,
   Session as GeminiSession,
 } from "@google/genai";
+import { ThinkingLevel } from "@google/genai";
 import type { InterviewMode, TranscriptEntry } from "@/lib/types";
 import type {
   ConnectOptions,
@@ -46,6 +53,15 @@ const GEMINI_OUTPUT_SAMPLE_RATE = 24000;
 const INPUT_BUFFER_SIZE = 4096;
 const INPUT_PREROLL_CHUNKS = 4;
 const INPUT_VAD_RMS_THRESHOLD = 0.012;
+const GEMINI_SDK_THINKING_LEVEL_BY_LEVEL: Record<
+  GeminiThinkingLevel,
+  ThinkingLevel
+> = {
+  minimal: ThinkingLevel.MINIMAL,
+  low: ThinkingLevel.LOW,
+  medium: ThinkingLevel.MEDIUM,
+  high: ThinkingLevel.HIGH,
+};
 
 interface GeminiSessionConfig {
   mode: InterviewMode;
@@ -91,6 +107,7 @@ export function useGeminiLiveSession(): [
   const activeInputTurnChunksRef = useRef<Uint8Array[]>([]);
   const pendingOutputTranscriptIdRef = useRef<string | null>(null);
   const pendingOutputTranscriptTextRef = useRef("");
+  const lastInterviewerTurnTextRef = useRef<string | null>(null);
   const transcribingTurnIdsRef = useRef<Set<string>>(new Set());
   const sessionConfigRef = useRef<GeminiSessionConfig | null>(null);
   const resumeHandleRef = useRef<string | null>(null);
@@ -98,6 +115,8 @@ export function useGeminiLiveSession(): [
   const resumeInFlightRef = useRef(false);
   const manualDisconnectRef = useRef(false);
   const resumeSessionRef = useRef<(() => Promise<void>) | null>(null);
+  const hasSentResumePromptRef = useRef(false);
+  const pendingResumePromptRef = useRef(false);
   const interviewStateRef = useRef<GeminiInterviewState>(
     createGeminiInterviewState()
   );
@@ -161,6 +180,7 @@ export function useGeminiLiveSession(): [
     activeInputTurnChunksRef.current = [];
     pendingOutputTranscriptIdRef.current = null;
     pendingOutputTranscriptTextRef.current = "";
+    lastInterviewerTurnTextRef.current = null;
     transcribingTurnIdsRef.current.clear();
     nextPlaybackTimeRef.current = 0;
     sessionConfigRef.current = null;
@@ -168,6 +188,8 @@ export function useGeminiLiveSession(): [
     activeSessionTokenRef.current = 0;
     resumeInFlightRef.current = false;
     manualDisconnectRef.current = false;
+    hasSentResumePromptRef.current = false;
+    pendingResumePromptRef.current = false;
   }, [clearOutputAudio]);
 
   useEffect(() => {
@@ -220,6 +242,24 @@ export function useGeminiLiveSession(): [
     pendingOutputTranscriptIdRef.current = null;
     pendingOutputTranscriptTextRef.current = "";
   }, [clearOutputAudio]);
+
+  const flushDeferredResumePrompt = useCallback(() => {
+    const action = getGeminiResumePromptAction({
+      isResumeSession: pendingResumePromptRef.current,
+      hasSentResumePrompt: hasSentResumePromptRef.current,
+      isUserTurnActive: Boolean(activeInputTurnIdRef.current),
+    });
+
+    if (action !== "send" || !sessionRef.current) {
+      return;
+    }
+
+    sessionRef.current.sendRealtimeInput({
+      text: getGeminiResumePrompt(lastInterviewerTurnTextRef.current),
+    });
+    hasSentResumePromptRef.current = true;
+    pendingResumePromptRef.current = false;
+  }, []);
 
   const startInputTurn = useCallback(() => {
     if (activeInputTurnIdRef.current) return;
@@ -287,8 +327,9 @@ export function useGeminiLiveSession(): [
       removeTranscript(turnId);
     } finally {
       transcribingTurnIdsRef.current.delete(turnId);
+      flushDeferredResumePrompt();
     }
-  }, [removeTranscript, upsertTranscript]);
+  }, [flushDeferredResumePrompt, removeTranscript, upsertTranscript]);
 
   const handleToolCalls = useCallback(
     (session: GeminiSession, functionCalls: FunctionCall[]) => {
@@ -529,6 +570,8 @@ export function useGeminiLiveSession(): [
                 pendingOutputTranscriptTextRef.current,
                 outputText
               );
+              lastInterviewerTurnTextRef.current =
+                pendingOutputTranscriptTextRef.current;
               upsertTranscript({
                 id: pendingOutputTranscriptIdRef.current,
                 role: "interviewer",
@@ -626,6 +669,12 @@ export function useGeminiLiveSession(): [
               },
             },
           },
+          thinkingConfig: {
+            thinkingLevel:
+              GEMINI_SDK_THINKING_LEVEL_BY_LEVEL[
+                DEFAULT_GEMINI_THINKING_LEVEL
+              ],
+          },
           outputAudioTranscription: {},
           realtimeInputConfig: {
             automaticActivityDetection: {
@@ -654,7 +703,21 @@ export function useGeminiLiveSession(): [
       }
       setCurrentAgent(interviewStateRef.current.currentAgentName);
 
-      if (!preserveConversation) {
+      const resumePromptAction = getGeminiResumePromptAction({
+        isResumeSession: preserveConversation,
+        hasSentResumePrompt: hasSentResumePromptRef.current,
+        isUserTurnActive: Boolean(activeInputTurnIdRef.current),
+      });
+
+      if (resumePromptAction === "send") {
+        session.sendRealtimeInput({
+          text: getGeminiResumePrompt(lastInterviewerTurnTextRef.current),
+        });
+        hasSentResumePromptRef.current = true;
+        pendingResumePromptRef.current = false;
+      } else if (resumePromptAction === "defer") {
+        pendingResumePromptRef.current = true;
+      } else if (!preserveConversation) {
         session.sendRealtimeInput({
           text: getGeminiInitialPrompt(scenarioId),
         });
@@ -721,6 +784,8 @@ export function useGeminiLiveSession(): [
       pendingOutputTranscriptIdRef.current = null;
       pendingOutputTranscriptTextRef.current = "";
       interviewStateRef.current = createGeminiInterviewState(scenarioId);
+      hasSentResumePromptRef.current = false;
+      pendingResumePromptRef.current = false;
 
       try {
         await openSession({
@@ -752,6 +817,8 @@ export function useGeminiLiveSession(): [
 
     manualDisconnectRef.current = false;
     resumeInFlightRef.current = true;
+    hasSentResumePromptRef.current = false;
+    pendingResumePromptRef.current = false;
     activeSessionTokenRef.current += 1;
     closeCurrentSession();
 
@@ -808,6 +875,7 @@ export function useGeminiLiveSession(): [
       goAwayTimeLeft: null,
       hasResumableSession: false,
     });
+    pendingResumePromptRef.current = false;
   }, [cleanupSession]);
 
   resumeSessionRef.current = resume;

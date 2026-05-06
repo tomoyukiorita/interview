@@ -72,6 +72,12 @@ const GEMINI_EDITORIAL_STYLE_RULES = `
 - 質問の前に毎回クッション言葉を置かない
 - 設定された質問文を、抽象的な言い回しへ勝手に置き換えすぎない
 - nextQuestionText が返ってきたら、その意味を保ったまま自然な言い回しに整える
+
+## 内部制御の扱い
+- 内部用語をユーザーに言わない
+- 「エージェント」「agent」「handoff」「引き継ぎ」「ロール」「担当を変える」などの内部構造を示す言葉は発話しない
+- shouldHandoff や handoffTarget は内部制御だけに使い、ユーザーには内部切替を説明しない
+- 話題や観点が変わるときは、「ここからは少し視点を変えて」「今のお話を組織の観点でも伺うと」のような自然な一言で視点を変え、会話として滑らかにつなぐ
 `;
 
 export function createGeminiInterviewState(
@@ -95,6 +101,18 @@ export function getGeminiInitialPrompt(scenarioId: string): string {
     "最近、仕事をしていて「今日はいい感じだな」と思えた瞬間って、どんなときですか。";
 
   return `インタビューを開始してください。最初は「本日はお話を伺えることを楽しみにしていました」と短く伝えてから、${openingQuestion}`;
+}
+
+export function getGeminiResumePrompt(
+  previousQuestion: string | null | undefined
+): string {
+  const trimmedQuestion = previousQuestion?.trim();
+
+  if (trimmedQuestion) {
+    return `少し間が空いたので会話を再開してください。歓迎は繰り返さないでください。接続トラブルの説明はせず、直前の質問を短く言い直してから自然に続けてください。自然な次の一言から入り、相手がすぐ答えられる形で返してください。直前の質問:「${trimmedQuestion}」`;
+  }
+
+  return "少し間が空いたので会話を再開してください。歓迎は繰り返さず、接続トラブルの説明も避けてください。自然に次の一言から入り、今の流れを保ったまま短く問い直して続けてください。";
 }
 
 export function buildGeminiInterviewSystemInstruction(
@@ -122,7 +140,7 @@ ${GEMINI_EDITORIAL_STYLE_RULES}
 - 各回答のあと、次の質問を決める前に必ず get_next_question を1回呼ぶ
 - get_next_question を呼ぶときは、現在の内部ロール名を currentAgentName に正確に渡す
 - get_next_question の返り値 nextQuestionText を次の質問の土台にする
-- shouldHandoff が true の場合は、短く橋渡ししてから handoffTarget のロールへ内部的に切り替える
+- shouldHandoff が true の場合も、ユーザーには内部切替を説明しない。自然な一言で視点を変え、nextQuestionText に進む
 - shouldHandoff が false の場合は、現在のロールを維持する
 - shouldHandoff が true のときも、会話の流れは途切れさせない
 

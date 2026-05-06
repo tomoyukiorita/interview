@@ -21,6 +21,12 @@ export interface GeminiUnexpectedCloseState {
   hasResumableSession: boolean;
 }
 
+export interface GeminiResumePromptState {
+  isResumeSession: boolean;
+  hasSentResumePrompt: boolean;
+  isUserTurnActive: boolean;
+}
+
 export function parseGeminiGoAwaySeconds(value?: string | null): number | null {
   if (!value) return null;
 
@@ -92,4 +98,18 @@ export function getGeminiUnexpectedCloseAction(
   }
 
   return "fail";
+}
+
+export function getGeminiResumePromptAction(
+  state: GeminiResumePromptState
+): "send" | "defer" | "skip" {
+  if (!state.isResumeSession || state.hasSentResumePrompt) {
+    return "skip";
+  }
+
+  if (state.isUserTurnActive) {
+    return "defer";
+  }
+
+  return "send";
 }

@@ -1,7 +1,7 @@
 export type InterviewMode = "auto" | "support" | "online_support";
 export type InterviewProvider = "openai" | "gemini";
 export type RealtimeVoice = "cedar" | "marin";
-export type GeminiLiveVoice = "Kore" | "Puck" | "Aoede";
+export type GeminiLiveVoice = "Kore" | "Puck" | "Aoede" | "Orus" | "Leda";
 export type InterviewVoice = RealtimeVoice | GeminiLiveVoice;
 export type RealtimeSpeedPreset = "slow" | "normal" | "fast";
 export type RealtimeTonePreset = "calm" | "bright" | "soft" | "firm";

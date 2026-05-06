@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   getGeminiUnexpectedCloseAction,
+  getGeminiResumePromptAction,
   getGeminiLiveConnectionUi,
   parseGeminiGoAwaySeconds,
 } from "./gemini-live-connection";
@@ -128,5 +129,42 @@ describe("gemini live connection helpers", () => {
         hasResumableSession: true,
       })
     ).toBe("ignore");
+  });
+
+  it("sends the resume prompt only once for resumed sessions", () => {
+    expect(
+      getGeminiResumePromptAction({
+        isResumeSession: true,
+        hasSentResumePrompt: false,
+        isUserTurnActive: false,
+      })
+    ).toBe("send");
+    expect(
+      getGeminiResumePromptAction({
+        isResumeSession: true,
+        hasSentResumePrompt: true,
+        isUserTurnActive: false,
+      })
+    ).toBe("skip");
+  });
+
+  it("skips the resume prompt for non-resumed sessions", () => {
+    expect(
+      getGeminiResumePromptAction({
+        isResumeSession: false,
+        hasSentResumePrompt: false,
+        isUserTurnActive: false,
+      })
+    ).toBe("skip");
+  });
+
+  it("defers the resume prompt while the interviewee is still speaking", () => {
+    expect(
+      getGeminiResumePromptAction({
+        isResumeSession: true,
+        hasSentResumePrompt: false,
+        isUserTurnActive: true,
+      })
+    ).toBe("defer");
   });
 });
