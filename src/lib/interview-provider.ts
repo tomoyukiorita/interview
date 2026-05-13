@@ -1,11 +1,16 @@
 import type { InterviewProvider } from "./types";
 
-export const INTERVIEW_PROVIDERS: InterviewProvider[] = ["openai", "gemini"];
+export const INTERVIEW_PROVIDERS: InterviewProvider[] = [
+  "openai",
+  "gemini",
+  "inworld",
+];
 export const DEFAULT_INTERVIEW_PROVIDER: InterviewProvider = "openai";
 
 const INTERVIEW_PROVIDER_LABELS: Record<InterviewProvider, string> = {
   openai: "Type 1",
   gemini: "Type 2",
+  inworld: "Type 3",
 };
 
 export function normalizeInterviewProvider(

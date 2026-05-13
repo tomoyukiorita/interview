@@ -16,9 +16,12 @@ import type {
   InterviewProvider,
   InterviewMode,
   InterviewVoice,
+  InworldRealtimeVadEagerness,
   RealtimeSpeedPreset,
   RealtimeSpeechStylePreset,
   RealtimeTonePreset,
+  RealtimeTurnDetectionMode,
+  RealtimeVadEagerness,
   TranscriptEntry,
   SpeechAudioMetrics,
   EmotionState,
@@ -44,6 +47,9 @@ interface InterviewRoomProps {
   speechStyle: RealtimeSpeechStylePreset;
   tone: RealtimeTonePreset;
   silenceDurationMs: ServerVadSilenceDurationMs;
+  inworldVadEagerness: InworldRealtimeVadEagerness;
+  turnDetectionMode: RealtimeTurnDetectionMode;
+  vadEagerness: RealtimeVadEagerness;
   onEnd: () => void;
 }
 
@@ -56,6 +62,9 @@ export function InterviewRoom({
   speechStyle,
   tone,
   silenceDurationMs,
+  inworldVadEagerness,
+  turnDetectionMode,
+  vadEagerness,
   onEnd,
 }: InterviewRoomProps) {
   const [session, sessionActions] = useInterviewSession(provider);
@@ -160,6 +169,9 @@ export function InterviewRoom({
         speechStyle,
         tone,
         silenceDurationMs,
+        inworldVadEagerness,
+        turnDetectionMode,
+        vadEagerness,
       });
       setStartTime(Date.now());
 
@@ -173,6 +185,9 @@ export function InterviewRoom({
         speechStyle,
         tone,
         silenceDurationMs,
+        inworldVadEagerness,
+        turnDetectionMode,
+        vadEagerness,
       });
       setStartTime(Date.now());
 
@@ -191,6 +206,9 @@ export function InterviewRoom({
     speechStyle,
     tone,
     silenceDurationMs,
+    inworldVadEagerness,
+    turnDetectionMode,
+    vadEagerness,
     sessionActions,
     analysisActions,
     tabCaptureActions,

@@ -5,6 +5,7 @@ import {
   createGeminiInterviewState,
   getGeminiInitialPrompt,
   getGeminiResumePrompt,
+  getGeminiSalvagedUserTurnPrompt,
   runGeminiNextQuestion,
 } from "./gemini-interview";
 
@@ -32,6 +33,17 @@ describe("gemini interview helpers", () => {
     expect(prompt).toContain("少し間が空いた");
     expect(prompt).toContain("自然に次の一言");
     expect(prompt).not.toContain("直前の質問:");
+  });
+
+  it("builds a salvage prompt that treats recovered user speech as the answer", () => {
+    const prompt = getGeminiSalvagedUserTurnPrompt(
+      "最近は社員同士がわきあいあいとしている時に良さを感じます"
+    );
+
+    expect(prompt).toContain("切断直前までの音声を文字起こしして復元");
+    expect(prompt).toContain("直前の質問への回答として扱ってください");
+    expect(prompt).toContain("同じ質問を最初から繰り返さない");
+    expect(prompt).toContain("社員同士");
   });
 
   it("includes speed, tone, and speech style guidance in the system instruction", () => {

@@ -5,12 +5,20 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 import {
   DEFAULT_REALTIME_VOICE,
-  REALTIME_VOICES,
+  VISIBLE_REALTIME_VOICE_OPTIONS,
 } from "@/lib/realtime-voice";
 import {
   DEFAULT_GEMINI_LIVE_VOICE,
   GEMINI_LIVE_VOICES,
 } from "@/lib/gemini-voice";
+import {
+  DEFAULT_INWORLD_REALTIME_VOICE,
+  INWORLD_REALTIME_VOICES,
+} from "@/lib/inworld-realtime-voice";
+import {
+  DEFAULT_INWORLD_REALTIME_VAD_EAGERNESS,
+  INWORLD_REALTIME_VAD_EAGERNESS_OPTIONS,
+} from "@/lib/inworld-realtime-vad";
 import {
   DEFAULT_INTERVIEW_PROVIDER,
   getInterviewProviderLabel,
@@ -20,18 +28,26 @@ import {
   DEFAULT_REALTIME_SPEED_PRESET,
   DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
   DEFAULT_REALTIME_TONE_PRESET,
+  DEFAULT_REALTIME_TURN_DETECTION_MODE,
+  DEFAULT_REALTIME_VAD_EAGERNESS,
   DEFAULT_SERVER_VAD_SILENCE_DURATION_MS,
   REALTIME_SPEED_PRESETS,
   REALTIME_SPEECH_STYLE_PRESETS,
   REALTIME_TONE_PRESETS,
+  REALTIME_TURN_DETECTION_OPTIONS,
+  REALTIME_VAD_EAGERNESS_OPTIONS,
   SERVER_VAD_SILENCE_OPTIONS,
 } from "@/lib/realtime-settings";
 import type {
   GeminiLiveVoice,
+  InworldRealtimeVadEagerness,
+  InworldRealtimeVoice,
   InterviewProvider,
   RealtimeSpeedPreset,
   RealtimeSpeechStylePreset,
   RealtimeTonePreset,
+  RealtimeTurnDetectionMode,
+  RealtimeVadEagerness,
   RealtimeVoice,
   ServerVadSilenceDurationMs,
 } from "@/lib/types";
@@ -96,6 +112,8 @@ export default function Home() {
     useState<RealtimeVoice>(DEFAULT_REALTIME_VOICE);
   const [selectedGeminiVoice, setSelectedGeminiVoice] =
     useState<GeminiLiveVoice>(DEFAULT_GEMINI_LIVE_VOICE);
+  const [selectedInworldVoice, setSelectedInworldVoice] =
+    useState<InworldRealtimeVoice>(DEFAULT_INWORLD_REALTIME_VOICE);
   const [selectedSpeed, setSelectedSpeed] =
     useState<RealtimeSpeedPreset>(DEFAULT_REALTIME_SPEED_PRESET);
   const [selectedSpeechStyle, setSelectedSpeechStyle] =
@@ -104,20 +122,34 @@ export default function Home() {
     useState<RealtimeTonePreset>(DEFAULT_REALTIME_TONE_PRESET);
   const [selectedSilenceDurationMs, setSelectedSilenceDurationMs] =
     useState<ServerVadSilenceDurationMs>(DEFAULT_SERVER_VAD_SILENCE_DURATION_MS);
+  const [selectedInworldVadEagerness, setSelectedInworldVadEagerness] =
+    useState<InworldRealtimeVadEagerness>(
+      DEFAULT_INWORLD_REALTIME_VAD_EAGERNESS
+    );
+  const [selectedTurnDetectionMode, setSelectedTurnDetectionMode] =
+    useState<RealtimeTurnDetectionMode>(DEFAULT_REALTIME_TURN_DETECTION_MODE);
+  const [selectedVadEagerness, setSelectedVadEagerness] =
+    useState<RealtimeVadEagerness>(DEFAULT_REALTIME_VAD_EAGERNESS);
 
   const handleStart = () => {
+    const isAutoOnlyProvider = selectedProvider !== "openai";
     const params = new URLSearchParams({
       provider: selectedProvider,
-      mode: selectedProvider === "gemini" ? "auto" : selectedMode,
+      mode: isAutoOnlyProvider ? "auto" : selectedMode,
       scenario: selectedScenario,
       voice:
         selectedProvider === "gemini"
           ? selectedGeminiVoice
+          : selectedProvider === "inworld"
+          ? selectedInworldVoice
           : selectedOpenAiVoice,
       speed: selectedSpeed,
       speechStyle: selectedSpeechStyle,
       tone: selectedTone,
       silenceDurationMs: String(selectedSilenceDurationMs),
+      inworldVadEagerness: selectedInworldVadEagerness,
+      turnDetectionMode: selectedTurnDetectionMode,
+      vadEagerness: selectedVadEagerness,
     });
     router.push(`/interview?${params.toString()}`);
   };
@@ -186,7 +218,7 @@ export default function Home() {
                 key={provider}
                 onClick={() => {
                   setSelectedProvider(provider);
-                  if (provider === "gemini") {
+                  if (provider !== "openai") {
                     setSelectedMode("auto");
                   }
                 }}
@@ -202,8 +234,10 @@ export default function Home() {
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
                   {provider === "openai"
-                    ? "現在の標準版です。`cedar` / `marin` を選んで音声インタビューできます。"
-                    : "新しいライブ版です。まずは自動インタビューのみ対応します。"}
+                    ? "現在の標準版です。複数の音声から選んで音声インタビューできます。"
+                    : provider === "gemini"
+                    ? "低レイテンシ版です。まずは自動インタビューのみ対応します。"
+                    : "音声品質を重視した低レイテンシ版です。自動インタビューのみ対応します。"}
                 </div>
               </button>
             ))}
@@ -247,17 +281,17 @@ export default function Home() {
 
               <button
                 onClick={() =>
-                  selectedProvider === "gemini"
+                  selectedProvider !== "openai"
                     ? undefined
                     : setSelectedMode("support")
                 }
-                disabled={selectedProvider === "gemini"}
+                disabled={selectedProvider !== "openai"}
                 className={cn(
                   "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
                   selectedMode === "support"
                     ? "border-accent bg-accent/5"
                     : "border-border bg-card hover:border-muted-foreground/30",
-                  selectedProvider === "gemini" &&
+                  selectedProvider !== "openai" &&
                     "cursor-not-allowed opacity-60 hover:border-border"
                 )}
               >
@@ -282,17 +316,17 @@ export default function Home() {
 
               <button
                 onClick={() =>
-                  selectedProvider === "gemini"
+                  selectedProvider !== "openai"
                     ? undefined
                     : setSelectedMode("online_support")
                 }
-                disabled={selectedProvider === "gemini"}
+                disabled={selectedProvider !== "openai"}
                 className={cn(
                   "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
                   selectedMode === "online_support"
                     ? "border-accent bg-accent/5"
                     : "border-border bg-card hover:border-muted-foreground/30",
-                  selectedProvider === "gemini" &&
+                  selectedProvider !== "openai" &&
                     "cursor-not-allowed opacity-60 hover:border-border"
                 )}
               >
@@ -362,83 +396,129 @@ export default function Home() {
             音声
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {selectedProvider === "openai"
-              ? REALTIME_VOICES.map((voice) => (
-                  <button
-                    key={voice}
-                    onClick={() => setSelectedOpenAiVoice(voice)}
-                    className={cn(
-                      "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
-                      selectedOpenAiVoice === voice
-                        ? "border-accent bg-accent/5"
-                        : "border-border bg-card hover:border-muted-foreground/30"
-                    )}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <div className="font-medium text-foreground text-sm capitalize">
-                          {voice}
-                        </div>
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {voice === "cedar" ? "男性" : "女性"}
+            {selectedProvider === "openai" &&
+              VISIBLE_REALTIME_VOICE_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => setSelectedOpenAiVoice(option.id)}
+                  className={cn(
+                    "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                    selectedOpenAiVoice === option.id
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium text-foreground text-sm">
+                        {option.label}
+                      </div>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {option.tone}
+                      </span>
+                      {option.recommended && (
+                        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+                          推奨
                         </span>
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {voice === "cedar"
-                          ? "落ち着いた男性の声質です。現在の既定音声で、自然で安定した話し方です。"
-                          : "やわらかい女性の声質です。少し雰囲気を変えて試したいときに向いています。"}
-                      </div>
+                      )}
                     </div>
-                    {selectedOpenAiVoice === voice && (
-                      <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
-                    )}
-                  </button>
-                ))
-              : GEMINI_LIVE_VOICES.map((voice) => (
-                  <button
-                    key={voice}
-                    onClick={() => setSelectedGeminiVoice(voice)}
-                    className={cn(
-                      "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
-                      selectedGeminiVoice === voice
-                        ? "border-accent bg-accent/5"
-                        : "border-border bg-card hover:border-muted-foreground/30"
-                    )}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <div className="font-medium text-foreground text-sm">
-                          {voice}
-                        </div>
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {voice === "Kore"
-                            ? "Firm"
-                            : voice === "Puck"
-                            ? "Upbeat"
-                            : voice === "Aoede"
-                            ? "Breezy"
-                            : voice === "Orus"
-                            ? "Firm"
-                            : "Youthful"}
-                        </span>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {option.description}
+                    </div>
+                  </div>
+                  {selectedOpenAiVoice === option.id && (
+                    <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
+                  )}
+                </button>
+              ))}
+            {selectedProvider === "gemini" &&
+              GEMINI_LIVE_VOICES.map((voice) => (
+                <button
+                  key={voice}
+                  onClick={() => setSelectedGeminiVoice(voice)}
+                  className={cn(
+                    "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                    selectedGeminiVoice === voice
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium text-foreground text-sm">
+                        {voice}
                       </div>
-                      <div className="text-xs text-muted-foreground mt-1">
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                         {voice === "Kore"
-                          ? "芯のある落ち着いた話し方です。経営者向けインタビューに合わせやすい firm 系です。"
+                          ? "Firm"
                           : voice === "Puck"
-                          ? "少し明るく軽快な印象です。前向きな空気を出したいときに向いています。"
+                          ? "Upbeat"
                           : voice === "Aoede"
-                          ? "やわらかく軽い空気感です。やさしい立ち上がりで話したいときに向いています。"
+                          ? "Breezy"
                           : voice === "Orus"
-                          ? "落ち着いた男性寄りの firm 系です。安定感を出したい経営者向けインタビューに向いています。"
-                          : "若めで軽やかな印象の声です。親しみやすく明るい雰囲気で進めたいときに向いています。"}
-                      </div>
+                          ? "Firm"
+                          : "Youthful"}
+                      </span>
                     </div>
-                    {selectedGeminiVoice === voice && (
-                      <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
-                    )}
-                  </button>
-                ))}
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {voice === "Kore"
+                        ? "芯のある落ち着いた話し方です。経営者向けインタビューに合わせやすい firm 系です。"
+                        : voice === "Puck"
+                        ? "少し明るく軽快な印象です。前向きな空気を出したいときに向いています。"
+                        : voice === "Aoede"
+                        ? "やわらかく軽い空気感です。やさしい立ち上がりで話したいときに向いています。"
+                        : voice === "Orus"
+                        ? "落ち着いた男性寄りの firm 系です。安定感を出したい経営者向けインタビューに向いています。"
+                        : "若めで軽やかな印象の声です。親しみやすく明るい雰囲気で進めたいときに向いています。"}
+                    </div>
+                  </div>
+                  {selectedGeminiVoice === voice && (
+                    <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
+                  )}
+                </button>
+              ))}
+            {selectedProvider === "inworld" &&
+              INWORLD_REALTIME_VOICES.map((voice) => (
+                <button
+                  key={voice}
+                  onClick={() => setSelectedInworldVoice(voice)}
+                  className={cn(
+                    "w-full flex items-start gap-4 rounded-lg border p-4 text-left transition-colors",
+                    selectedInworldVoice === voice
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium text-foreground text-sm">
+                        {voice}
+                      </div>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {voice === "Asuka"
+                          ? "Energetic"
+                          : voice === "Haruto"
+                          ? "Narrative"
+                          : voice === "Hina"
+                          ? "Clear"
+                          : "Curious"}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {voice === "Asuka"
+                        ? "日本語の中年女性 voice です。明るくクリアに進めたいときに向いています。"
+                        : voice === "Haruto"
+                        ? "日本語の年配男性 voice です。物語調で落ち着いた印象に寄せたいときに向いています。"
+                        : voice === "Hina"
+                        ? "日本語の若い女性 voice です。明瞭で軽やかな進行に向いています。"
+                        : "日本語の中年男性 voice です。経営者向けインタビューの既定候補です。"}
+                    </div>
+                  </div>
+                  {selectedInworldVoice === voice && (
+                    <div className="w-2 h-2 rounded-full bg-accent mt-1.5 shrink-0" />
+                  )}
+                </button>
+              ))}
           </div>
         </div>
 
@@ -527,26 +607,97 @@ export default function Home() {
           <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
             発話終わり判定
           </h3>
+
+          {selectedProvider === "openai" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+              {REALTIME_TURN_DETECTION_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setSelectedTurnDetectionMode(option.value)}
+                  className={cn(
+                    "w-full rounded-lg border p-4 text-left transition-colors",
+                    selectedTurnDetectionMode === option.value
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="font-medium text-foreground text-sm">
+                    {option.label}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {option.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {SERVER_VAD_SILENCE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setSelectedSilenceDurationMs(option.value)}
-                className={cn(
-                  "w-full rounded-lg border p-4 text-left transition-colors",
-                  selectedSilenceDurationMs === option.value
-                    ? "border-accent bg-accent/5"
-                    : "border-border bg-card hover:border-muted-foreground/30"
-                )}
-              >
-                <div className="font-medium text-foreground text-sm">
-                  {option.label}
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {option.description}
-                </div>
-              </button>
-            ))}
+            {selectedProvider === "inworld" &&
+              INWORLD_REALTIME_VAD_EAGERNESS_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => setSelectedInworldVadEagerness(option.id)}
+                  className={cn(
+                    "w-full rounded-lg border p-4 text-left transition-colors",
+                    selectedInworldVadEagerness === option.id
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="font-medium text-foreground text-sm">
+                    {option.label}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {option.description}
+                  </div>
+                </button>
+              ))}
+
+            {selectedProvider === "openai" &&
+              selectedTurnDetectionMode === "semantic_vad" &&
+              REALTIME_VAD_EAGERNESS_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => setSelectedVadEagerness(option.id)}
+                  className={cn(
+                    "w-full rounded-lg border p-4 text-left transition-colors",
+                    selectedVadEagerness === option.id
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="font-medium text-foreground text-sm">
+                    {option.label}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {option.description}
+                  </div>
+                </button>
+              ))}
+
+            {((selectedProvider === "openai" &&
+              selectedTurnDetectionMode === "server_vad") ||
+              selectedProvider === "gemini") &&
+              SERVER_VAD_SILENCE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setSelectedSilenceDurationMs(option.value)}
+                  className={cn(
+                    "w-full rounded-lg border p-4 text-left transition-colors",
+                    selectedSilenceDurationMs === option.value
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="font-medium text-foreground text-sm">
+                    {option.label}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {option.description}
+                  </div>
+                </button>
+              ))}
           </div>
         </div>
 

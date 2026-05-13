@@ -115,6 +115,12 @@ export function getGeminiResumePrompt(
   return "少し間が空いたので会話を再開してください。歓迎は繰り返さず、接続トラブルの説明も避けてください。自然に次の一言から入り、今の流れを保ったまま短く問い直して続けてください。";
 }
 
+export function getGeminiSalvagedUserTurnPrompt(
+  salvagedTranscript: string
+): string {
+  return `ユーザーの回答中に接続が切れたため、切断直前までの音声を文字起こしして復元しました。接続トラブルの説明は短くして、同じ質問を最初から繰り返さないでください。以下の復元された回答を、直前の質問への回答として扱ってください。回答が途中で終わっている可能性があるので、勝手に補完しすぎず、「ここまでは〜と伺っていました。続きがあればそのままお話しください」のように自然に再開してください。復元された回答:「${salvagedTranscript.trim()}」`;
+}
+
 export function buildGeminiInterviewSystemInstruction(
   context?: GeminiInterviewStyleContext
 ): string {

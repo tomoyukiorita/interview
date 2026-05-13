@@ -5,25 +5,38 @@ import { DEFAULT_REALTIME_VOICE, normalizeRealtimeVoice } from "@/lib/realtime-v
 import {
   buildMicrophoneConstraints,
   buildRealtimeInputAudioConfig,
+  buildRealtimeTurnDetectionConfig,
 } from "@/lib/realtime-audio-config";
 import {
   DEFAULT_REALTIME_SPEED_PRESET,
   DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
   DEFAULT_REALTIME_TONE_PRESET,
+  DEFAULT_REALTIME_TURN_DETECTION_MODE,
+  DEFAULT_REALTIME_VAD_EAGERNESS,
   DEFAULT_SERVER_VAD_SILENCE_DURATION_MS,
   getRealtimeSpeedValue,
   normalizeRealtimeSpeedPreset,
   normalizeRealtimeSpeechStylePreset,
   normalizeRealtimeTonePreset,
+  normalizeRealtimeTurnDetectionMode,
+  normalizeRealtimeVadEagerness,
   normalizeServerVadSilenceDurationMs,
 } from "@/lib/realtime-settings";
+import {
+  DEFAULT_REALTIME_REASONING_EFFORT,
+  OPENAI_REALTIME_MODEL,
+} from "@/lib/realtime-model";
+import { appendUniqueTranscriptEntries } from "@/lib/transcript-dedupe";
 import type {
   InterviewVoice,
   InterviewMode,
+  InworldRealtimeVadEagerness,
   RealtimeSpeedPreset,
   RealtimeSpeechStylePreset,
   RealtimeSessionStyleContext,
   RealtimeTonePreset,
+  RealtimeTurnDetectionMode,
+  RealtimeVadEagerness,
   ServerVadSilenceDurationMs,
   TranscriptEntry,
 } from "@/lib/types";
@@ -60,6 +73,9 @@ export interface ConnectOptions {
   speechStyle?: RealtimeSpeechStylePreset;
   tone?: RealtimeTonePreset;
   silenceDurationMs?: ServerVadSilenceDurationMs;
+  inworldVadEagerness?: InworldRealtimeVadEagerness;
+  turnDetectionMode?: RealtimeTurnDetectionMode;
+  vadEagerness?: RealtimeVadEagerness;
 }
 
 export interface RealtimeSessionActions {
@@ -203,14 +219,31 @@ export function useRealtimeSession(): [
   const processedItemIds = useRef<Set<string>>(new Set());
   const processedSegmentIds = useRef<Set<string>>(new Set());
   const modeRef = useRef<InterviewMode>("auto");
+  const connectInFlightRef = useRef(false);
+  const activeSessionIdRef = useRef(0);
   const speakerMapRef = useRef<Map<string, "interviewer" | "interviewee">>(new Map());
+
+  const cleanupCurrentConnection = useCallback(() => {
+    activeSessionIdRef.current += 1;
+    sessionRef.current?.close();
+    sessionRef.current = null;
+    mixerDisposeRef.current?.();
+    mixerDisposeRef.current = null;
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+    if (audioElementRef.current) {
+      audioElementRef.current.pause();
+      audioElementRef.current.srcObject = null;
+      audioElementRef.current.removeAttribute("src");
+      audioElementRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
-      sessionRef.current?.close();
-      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      cleanupCurrentConnection();
     };
-  }, []);
+  }, [cleanupCurrentConnection]);
 
   const mapSpeakerToRole = useCallback(
     (speakerLabel: string): "interviewer" | "interviewee" => {
@@ -228,6 +261,12 @@ export function useRealtimeSession(): [
 
   const connect = useCallback(
     async (mode: InterviewMode, scenarioId: string, options?: ConnectOptions) => {
+      if (connectInFlightRef.current || sessionRef.current) {
+        cleanupCurrentConnection();
+      }
+      connectInFlightRef.current = true;
+      const sessionId = activeSessionIdRef.current + 1;
+      activeSessionIdRef.current = sessionId;
       setState((prev) => ({ ...prev, isConnecting: true, error: null, mode }));
       processedItemIds.current.clear();
       processedSegmentIds.current.clear();
@@ -245,7 +284,23 @@ export function useRealtimeSession(): [
           import("@/lib/agents"),
           navigator.mediaDevices.getUserMedia(buildMicrophoneConstraints()),
         ]);
+        const voice = normalizeRealtimeVoice(
+          options?.voice ?? DEFAULT_REALTIME_VOICE
+        );
+        const speedPreset = normalizeRealtimeSpeedPreset(
+          options?.speed ?? DEFAULT_REALTIME_SPEED_PRESET
+        );
+        const speechStylePreset = normalizeRealtimeSpeechStylePreset(
+          options?.speechStyle ?? DEFAULT_REALTIME_SPEECH_STYLE_PRESET
+        );
+        const tonePreset = normalizeRealtimeTonePreset(
+          options?.tone ?? DEFAULT_REALTIME_TONE_PRESET
+        );
         agentsModule.resetInterviewState(scenarioId);
+        agentsModule.setInterviewStyleContext({
+          speechStyle: speechStylePreset,
+          tone: tonePreset,
+        });
         const agent = agentsModule.getAgentForMode(mode);
         mediaStreamRef.current = micStream;
 
@@ -275,48 +330,51 @@ export function useRealtimeSession(): [
           mode === "support" || mode === "online_support"
             ? "gpt-4o-transcribe-diarize"
             : "gpt-4o-transcribe";
-        const voice = normalizeRealtimeVoice(
-          options?.voice ?? DEFAULT_REALTIME_VOICE
-        );
-        const speedPreset = normalizeRealtimeSpeedPreset(
-          options?.speed ?? DEFAULT_REALTIME_SPEED_PRESET
-        );
-        const speechStylePreset = normalizeRealtimeSpeechStylePreset(
-          options?.speechStyle ?? DEFAULT_REALTIME_SPEECH_STYLE_PRESET
-        );
-        const tonePreset = normalizeRealtimeTonePreset(
-          options?.tone ?? DEFAULT_REALTIME_TONE_PRESET
-        );
         const silenceDurationMs = normalizeServerVadSilenceDurationMs(
           String(
             options?.silenceDurationMs ?? DEFAULT_SERVER_VAD_SILENCE_DURATION_MS
           )
         );
+        const turnDetectionMode = normalizeRealtimeTurnDetectionMode(
+          options?.turnDetectionMode ?? DEFAULT_REALTIME_TURN_DETECTION_MODE
+        );
+        const vadEagerness = normalizeRealtimeVadEagerness(
+          options?.vadEagerness ?? DEFAULT_REALTIME_VAD_EAGERNESS
+        );
+        const turnDetection = buildRealtimeTurnDetectionConfig({
+          mode: turnDetectionMode,
+          silenceDurationMs,
+          eagerness: vadEagerness,
+        });
         const speed = getRealtimeSpeedValue(speedPreset);
 
         const session = new RealtimeSession(agent, {
-          model: "gpt-realtime-1.5",
+          model: OPENAI_REALTIME_MODEL,
           transport,
           context: {
             speechStyle: speechStylePreset,
             tone: tonePreset,
           },
           config: {
+            reasoning: {
+              effort: DEFAULT_REALTIME_REASONING_EFFORT,
+            },
             audio: {
               input: buildRealtimeInputAudioConfig({
                 transcriptionModel,
-                silenceDurationMs,
+                turnDetection,
               }),
               output: {
                 voice,
                 speed,
               },
             },
-          },
+          } as never,
         });
         sessionRef.current = session;
 
         session.on("agent_start", (_ctx, ag) => {
+          if (activeSessionIdRef.current !== sessionId) return;
           setState((prev) => ({
             ...prev,
             currentAgent: ag.name,
@@ -324,6 +382,7 @@ export function useRealtimeSession(): [
         });
 
         session.on("agent_handoff", (_ctx, _from, toAgent) => {
+          if (activeSessionIdRef.current !== sessionId) return;
           setState((prev) => ({
             ...prev,
             currentAgent: toAgent.name,
@@ -338,6 +397,7 @@ export function useRealtimeSession(): [
             const origOn = transport.on?.bind(transport);
             if (origOn) {
               origOn("*", (event: Record<string, unknown>) => {
+                if (activeSessionIdRef.current !== sessionId) return;
                 if (
                   event.type ===
                   "conversation.item.input_audio_transcription.segment"
@@ -360,7 +420,9 @@ export function useRealtimeSession(): [
 
                   setState((prev) => ({
                     ...prev,
-                    transcript: [...prev.transcript, entry],
+                    transcript: appendUniqueTranscriptEntries(prev.transcript, [
+                      entry,
+                    ]),
                   }));
                 }
               });
@@ -370,6 +432,7 @@ export function useRealtimeSession(): [
           }
 
           session.on("history_added", (item) => {
+            if (activeSessionIdRef.current !== sessionId) return;
             if (processedItemIds.current.has(item.itemId)) return;
             processedItemIds.current.add(item.itemId);
 
@@ -377,12 +440,15 @@ export function useRealtimeSession(): [
             if (entry) {
               setState((prev) => ({
                 ...prev,
-                transcript: [...prev.transcript, entry],
+                transcript: appendUniqueTranscriptEntries(prev.transcript, [
+                  entry,
+                ]),
               }));
             }
           });
 
           session.on("history_updated", (history) => {
+            if (activeSessionIdRef.current !== sessionId) return;
             const newTranscripts: TranscriptEntry[] = [];
             for (const item of history) {
               if (processedItemIds.current.has(item.itemId)) continue;
@@ -395,13 +461,17 @@ export function useRealtimeSession(): [
             if (newTranscripts.length > 0) {
               setState((prev) => ({
                 ...prev,
-                transcript: [...prev.transcript, ...newTranscripts],
+                transcript: appendUniqueTranscriptEntries(
+                  prev.transcript,
+                  newTranscripts
+                ),
               }));
             }
           });
         } else {
           // Auto mode: standard transcript handling
           session.on("history_added", (item) => {
+            if (activeSessionIdRef.current !== sessionId) return;
             if (processedItemIds.current.has(item.itemId)) return;
 
             const entry = extractTranscriptFromItem(item, mode);
@@ -409,12 +479,15 @@ export function useRealtimeSession(): [
               processedItemIds.current.add(item.itemId);
               setState((prev) => ({
                 ...prev,
-                transcript: [...prev.transcript, entry],
+                transcript: appendUniqueTranscriptEntries(prev.transcript, [
+                  entry,
+                ]),
               }));
             }
           });
 
           session.on("history_updated", (history) => {
+            if (activeSessionIdRef.current !== sessionId) return;
             const newTranscripts: TranscriptEntry[] = [];
             for (const item of history) {
               if (processedItemIds.current.has(item.itemId)) continue;
@@ -427,13 +500,17 @@ export function useRealtimeSession(): [
             if (newTranscripts.length > 0) {
               setState((prev) => ({
                 ...prev,
-                transcript: [...prev.transcript, ...newTranscripts],
+                transcript: appendUniqueTranscriptEntries(
+                  prev.transcript,
+                  newTranscripts
+                ),
               }));
             }
           });
         }
 
         session.on("agent_tool_end", (_ctx, _ag, tool, result) => {
+          if (activeSessionIdRef.current !== sessionId) return;
           const suggestion = parseToolResult(tool.name, result);
           if (suggestion) {
             setState((prev) => ({
@@ -444,19 +521,52 @@ export function useRealtimeSession(): [
         });
 
         session.on("audio_start", () => {
+          if (activeSessionIdRef.current !== sessionId) return;
           setState((prev) => ({ ...prev, isSpeaking: false }));
         });
 
         session.on("audio_interrupted", () => {
+          if (activeSessionIdRef.current !== sessionId) return;
           setState((prev) => ({ ...prev, isSpeaking: true }));
         });
 
         session.on("error", (err: unknown) => {
+          if (activeSessionIdRef.current !== sessionId) return;
           const errObj = err as Record<string, unknown>;
+          const errorPayload = errObj?.error as
+            | Record<string, unknown>
+            | undefined;
+          const innerError = errorPayload?.error as
+            | Record<string, unknown>
+            | undefined;
+
+          const code =
+            (innerError?.code as string | undefined) ??
+            (errorPayload?.code as string | undefined);
           const message =
-            (errObj?.error as Record<string, unknown>)?.message ??
-            errObj?.message ??
-            (typeof errObj?.error === "string" ? errObj.error : null);
+            (innerError?.message as string | undefined) ??
+            (errorPayload?.message as string | undefined) ??
+            (errObj?.message as string | undefined) ??
+            (typeof errorPayload === "string" ? errorPayload : null);
+
+          // No useful info → drop silently. Empty `{ type: 'error', error: {} }`
+          // sometimes arrives when the transport flushes after disconnect.
+          const hasUsefulInfo =
+            Boolean(code) ||
+            Boolean(message) ||
+            (errorPayload && Object.keys(errorPayload).length > 1);
+          if (!hasUsefulInfo) return;
+
+          // The Agents SDK occasionally double-fires `response.create` around
+          // tool calls. The API rejects the duplicate with this code while the
+          // original response keeps streaming, so it is safe to ignore.
+          if (code === "conversation_already_has_active_response") {
+            console.warn(
+              "RealtimeSession: duplicate response.create rejected by API (safe to ignore)",
+              { code, message }
+            );
+            return;
+          }
 
           console.error(
             "RealtimeSession error:",
@@ -485,26 +595,12 @@ export function useRealtimeSession(): [
           return data.apiKey as string;
         };
 
-        // 最大2回試行（リトライ時は自動的に新トークンを取得）
-        let lastError: Error | null = null;
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            await session.connect({ apiKey: apiKeyFn });
-            lastError = null;
-            break;
-          } catch (err) {
-            lastError =
-              err instanceof Error ? err : new Error("接続に失敗しました");
-            console.warn(
-              `RealtimeSession connect attempt ${attempt + 1} failed:`,
-              err
-            );
-            if (attempt === 0) {
-              await new Promise((r) => setTimeout(r, 500));
-            }
-          }
+        await session.connect({ apiKey: apiKeyFn });
+
+        if (activeSessionIdRef.current !== sessionId) {
+          session.close();
+          return;
         }
-        if (lastError) throw lastError;
 
         setState((prev) => ({
           ...prev,
@@ -513,6 +609,7 @@ export function useRealtimeSession(): [
           currentAgent: agent.name,
         }));
       } catch (err) {
+        cleanupCurrentConnection();
         const message =
           err instanceof Error ? err.message : "接続に失敗しました";
         setState((prev) => ({
@@ -520,25 +617,16 @@ export function useRealtimeSession(): [
           isConnecting: false,
           error: message,
         }));
+      } finally {
+        connectInFlightRef.current = false;
       }
     },
-    [mapSpeakerToRole]
+    [cleanupCurrentConnection, mapSpeakerToRole]
   );
 
   const disconnect = useCallback(() => {
-    if (sessionRef.current) {
-      sessionRef.current.close();
-      sessionRef.current = null;
-    }
-    if (mixerDisposeRef.current) {
-      mixerDisposeRef.current();
-      mixerDisposeRef.current = null;
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-      mediaStreamRef.current = null;
-    }
-    audioElementRef.current = null;
+    cleanupCurrentConnection();
+    connectInFlightRef.current = false;
     processedItemIds.current.clear();
     processedSegmentIds.current.clear();
     speakerMapRef.current.clear();
@@ -556,7 +644,7 @@ export function useRealtimeSession(): [
       goAwayTimeLeft: null,
       hasResumableSession: false,
     });
-  }, []);
+  }, [cleanupCurrentConnection]);
 
   const getMediaStream = useCallback(() => mediaStreamRef.current, []);
 

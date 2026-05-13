@@ -1,12 +1,29 @@
 export type InterviewMode = "auto" | "support" | "online_support";
-export type InterviewProvider = "openai" | "gemini";
-export type RealtimeVoice = "cedar" | "marin";
+export type InterviewProvider = "openai" | "gemini" | "inworld";
+export type RealtimeVoice =
+  | "marin"
+  | "cedar"
+  | "alloy"
+  | "ash"
+  | "ballad"
+  | "coral"
+  | "echo"
+  | "sage"
+  | "shimmer"
+  | "verse";
 export type GeminiLiveVoice = "Kore" | "Puck" | "Aoede" | "Orus" | "Leda";
-export type InterviewVoice = RealtimeVoice | GeminiLiveVoice;
+export type InworldRealtimeVoice = "Asuka" | "Haruto" | "Hina" | "Satoshi";
+export type InterviewVoice =
+  | RealtimeVoice
+  | GeminiLiveVoice
+  | InworldRealtimeVoice;
 export type RealtimeSpeedPreset = "slow" | "normal" | "fast";
 export type RealtimeTonePreset = "calm" | "bright" | "soft" | "firm";
 export type RealtimeSpeechStylePreset = "standard" | "kansai";
 export type ServerVadSilenceDurationMs = 300 | 500 | 800 | 1200 | 1500;
+export type InworldRealtimeVadEagerness = "low" | "medium" | "high";
+export type RealtimeTurnDetectionMode = "server_vad" | "semantic_vad";
+export type RealtimeVadEagerness = "low" | "medium" | "high";
 export interface RealtimeSessionStyleContext {
   speechStyle?: RealtimeSpeechStylePreset;
   tone?: RealtimeTonePreset;

@@ -13,6 +13,7 @@ import {
   normalizeRealtimeSpeechStylePreset,
   normalizeRealtimeTonePreset,
 } from "./realtime-settings";
+import { buildDialectAwareQuestionText } from "./realtime-dialect";
 import type {
   BranchDecision,
   RealtimeSessionStyleContext,
@@ -28,6 +29,11 @@ let interviewState = {
   completedTopics: [] as string[],
 };
 
+let interviewStyleContext: RealtimeSessionStyleContext = {
+  speechStyle: DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
+  tone: DEFAULT_REALTIME_TONE_PRESET,
+};
+
 export function resetInterviewState(scenarioId: string = "general") {
   interviewState = {
     currentScenarioId: scenarioId,
@@ -39,6 +45,15 @@ export function resetInterviewState(scenarioId: string = "general") {
   };
 }
 
+export function setInterviewStyleContext(context: RealtimeSessionStyleContext) {
+  interviewStyleContext = {
+    speechStyle: normalizeRealtimeSpeechStylePreset(
+      context.speechStyle ?? DEFAULT_REALTIME_SPEECH_STYLE_PRESET
+    ),
+    tone: normalizeRealtimeTonePreset(context.tone ?? DEFAULT_REALTIME_TONE_PRESET),
+  };
+}
+
 export function getInterviewState() {
   return { ...interviewState };
 }
@@ -46,23 +61,76 @@ export function getInterviewState() {
 function buildSessionStyleInstructions(
   context?: RealtimeSessionStyleContext
 ): string {
+  const effectiveContext = {
+    ...interviewStyleContext,
+    ...context,
+  };
   const speechStyle = normalizeRealtimeSpeechStylePreset(
-    context?.speechStyle ?? DEFAULT_REALTIME_SPEECH_STYLE_PRESET
+    effectiveContext.speechStyle ?? DEFAULT_REALTIME_SPEECH_STYLE_PRESET
   );
   const tone = normalizeRealtimeTonePreset(
-    context?.tone ?? DEFAULT_REALTIME_TONE_PRESET
+    effectiveContext.tone ?? DEFAULT_REALTIME_TONE_PRESET
   );
   const speechStyleInstruction = getRealtimeSpeechStyleInstruction(speechStyle);
   const toneInstruction = getRealtimeToneInstruction(tone);
-  const speechStyleLine =
+  const dialectRules =
     speechStyle === "kansai"
-      ? "今回は関西弁が指定されているので、受け、橋渡し、質問の語尾まで関西弁で統一する"
-      : "今回は標準語が指定されているので、受け、橋渡し、質問の語尾まで標準語で統一する";
+      ? `- 今回は関西弁が指定されている。「丁寧な関西弁」モードで話す。面接として失礼にならない丁寧さは保ちつつ、関西の語尾・イントネーション・アクセントを必ず効かせる。純粋な標準語に戻さない
+- 「丁寧」を「標準語のですます」と誤解しない。ここでの丁寧は「丁寧な関西弁」であり、標準語のですますに着地したら関西弁失敗とみなす
+- 全てのAI音声発話で関西弁を維持する。受け、橋渡し、質問の語尾まで関西弁で統一する
+- 標準語の文をそのまま読み上げない。nextQuestionText は意味を保ったまま、必ず丁寧な関西弁の言い回しに言い換えてから話す
 
-  return `## セッションで指定された話し方
-- セッションで指定された話し方を最優先する
-- ${speechStyleLine}
+【発話直前のセルフチェック（最重要・全ターン必須）】
+- 発話を音声に出す直前に、自分の文末を必ずチェックする
+- もし質問が以下のいずれかの形で終わっていたら、必ず後述の関西丁寧形に置き換えてから出力する
+  - 「〜していますか？」/「〜ていますか？」/「〜ますか？」（標準語）
+  - 「〜なんですか？」/「〜のですか？」/「〜ですか？」（標準語）
+  - 「〜してください」/「〜教えてください」（標準語）
+- 関西丁寧形に置き換えできていない発話は、出力前に作り直す
+
+【質問語尾: 禁止形と必須形】
+- 禁止する文末（標準語のまま終止しない）
+  - 「〜していますか？」「〜ていますか？」「〜なんですか？」「〜のですか？」
+  - 「〜してください」（依頼の語尾）
+- 必須形（質問は必ず以下のいずれかで終止する）
+  - 「〜してはりますか？」/「〜してはるんですか？」（相手の動作・状態を尋ねる）
+  - 「〜やと思いますか？」/「〜やと考えてはりますか？」（意見を尋ねる）
+  - 「〜なんですやろ？」/「〜やったりしますか？」（柔らかい確認）
+  - 「〜もらえますか？」/「〜もろえますか？」/「〜いただけますか？」（依頼）
+- 具体変換例
+  - 「思っていますか？」→「思てはりますか？」
+  - 「感じていますか？」→「感じてはりますか？」
+  - 「考えていますか？」→「考えてはりますか？」
+  - 「捉えていますか？」→「捉えてはりますか？」
+  - 「やっていますか？」→「やってはりますか？」
+  - 「〜は何ですか？」→「〜は何やと思いますか？」
+  - 「なぜですか？」→「なんでやと思いますか？」/「どうしてやと思いますか？」
+  - 「聞かせてください」→「聞かせてもらえますか？」
+  - 「教えてください」→「教えてもらえますか？」
+- 友達口調のフランク終止形（「〜やん」「〜やで」「〜やろ？」「〜してくれへん？」「〜してる？」「〜思う？」）を質問の主軸にしない。受けや短い感嘆として軽く混ぜる程度に留める
+
+【受け・相づち・つなぎ】
+- 受けや感嘆では関西らしさを出す。「ほんま、それは大事ですよね」「めっちゃええ話やと思いますわ」「なるほどな、そういうことですか」「そうなんですね、それはええ話ですやん」のように、関西の感嘆・終助詞と丁寧形を混ぜる
+- 「ですわ」「ますわ」「思いますわ」のような関西の柔らかい丁寧形を時々混ぜる
+- 受けで標準語の「なるほど、わかります」のような無味な相づちで終わらせない。「なるほどな、そういうことですか」「ほんま、それはようわかりますわ」のように関西要素を必ず含める
+
+【イントネーション（丁寧形でも抑揚は決して下げない）】
+- 「丁寧」を理由に声を落ち着かせ過ぎない。関西の丁寧会話は標準語の丁寧会話よりピッチの上下が大きい。標準語ですますの落ち着いたフラットな読み上げに着地しない
+- 語彙だけでなくイントネーションも関西弁にする。次の4点を必ず守る
+  1. 文末イントネーション: 「〜してはりますか？」「〜やと思いますか？」「〜なんですやろ？」のような疑問語尾は、文末の「ますか？」「ですか？」「やろ？」を必ず関西調で上げ気味・伸ばし気味に発音する。標準語の質問のように文末をフラットに下げ切らない。語尾を弱く飲み込まない
+  2. 抑揚の幅: 関西弁は標準語よりピッチの上下が大きい。平坦に読まず、抑揚をはっきりつける。丁寧形でもこの抑揚は維持する
+  3. 高低アクセント: 関西は高起式（語頭から高め）が多い。「ありがとう」「先生」「会社」「気持ち」「経営者」などは関西アクセントで発音する
+  4. 語頭強勢: 「ほんま」「めっちゃ」「ええ」「そやな」「なるほどな」のような関西フレーズは、語頭を強めに置いて末尾を少し伸ばす
+- ただし相手を見下したり乱暴な物言いはせず、過度な芸人口調にもせず、関西の落ち着いたビジネス会話のトーンを保つ`
+      : `- 今回は標準語が指定されているので、受け、橋渡し、質問の語尾まで標準語で統一する
+- 方言や強い口語に寄せず、自然な標準語を維持する`;
+
+  return `## Language and Dialect
+- このセクションは発話スタイルの最優先ルールです。基本のインタビュー手順より優先する
+${dialectRules}
 - ${speechStyleInstruction}
+
+## Voice Delivery
 - ${toneInstruction}`;
 }
 
@@ -129,6 +197,16 @@ const getNextQuestion = tool({
         topicFollowUpCount: interviewState.currentTopicFollowUpCount,
       }
     );
+    const speechStyle = normalizeRealtimeSpeechStylePreset(
+      interviewStyleContext.speechStyle ?? DEFAULT_REALTIME_SPEECH_STYLE_PRESET
+    );
+    const styledDecision: BranchDecision = {
+      ...decision,
+      nextQuestionText: buildDialectAwareQuestionText(
+        decision.nextQuestionText ?? "",
+        speechStyle
+      ),
+    };
 
     const currentQuestion =
       scenario.topics[interviewState.currentTopicIndex]?.questions[
@@ -138,12 +216,12 @@ const getNextQuestion = tool({
       Boolean(currentQuestion) &&
       (answerQuality === "brief" || answerQuality === "off_topic") &&
       interviewState.currentTopicFollowUpCount < 1 &&
-      decision.nextQuestionId === currentQuestion?.id &&
-      decision.nextQuestionText !== currentQuestion?.text;
+      styledDecision.nextQuestionId === currentQuestion?.id &&
+      styledDecision.nextQuestionText !== currentQuestion?.text;
 
-    if (decision.suggestedTopic) {
+    if (styledDecision.suggestedTopic) {
       const topicIdx = scenario.topics.findIndex(
-        (t) => t.id === decision.suggestedTopic
+        (t) => t.id === styledDecision.suggestedTopic
       );
       if (topicIdx >= 0) {
         interviewState.currentTopicIndex = topicIdx;
@@ -154,8 +232,8 @@ const getNextQuestion = tool({
       interviewState.currentTopicIndex++;
       interviewState.currentQuestionIndex = 0;
       interviewState.currentTopicFollowUpCount = 0;
-      if (decision.suggestedTopic) {
-        interviewState.completedTopics.push(decision.suggestedTopic);
+      if (styledDecision.suggestedTopic) {
+        interviewState.completedTopics.push(styledDecision.suggestedTopic);
       }
     } else {
       if (consumedTopicFollowUp) {
@@ -173,7 +251,7 @@ const getNextQuestion = tool({
       sentiment,
     });
 
-    return JSON.stringify(decision);
+    return JSON.stringify(styledDecision);
   },
 });
 
@@ -227,8 +305,17 @@ const suggestFollowUp = tool({
 });
 
 const editorialStyleRules = `
+## ツール呼び出し時の沈黙ルール（最優先・絶対遵守）
+- 1ユーザーターンに対して、AI からの音声発話は必ず1つだけにする。複数の発話に分けてはいけない
+- get_next_question / record_observation / suggest_follow_up のいずれを呼ぶ場合も、ツール呼び出しを「最初のアクション」として実行する。ツールを呼ぶ前に音声を出さない
+- 「次の聞きどころを整理する」「ちょっと考える」「確認します」「では次に〜」のような前置き・予告・つなぎを声に出さない。preamble は完全に禁止
+- ツールが返ってきた後に初めて1回だけ発話し、その1発話の中で「短い受け」+「次の質問」をまとめて出す
+- 直前の発話で短い受けを既に言った場合でも、ツール結果を待たずに音声を出してはいけない。受けはツール後の1発話に統合する
+- もし誤って前置きを声に出してしまった場合でも、ツール結果が返った後にもう一度同じ受けや前置きを繰り返さない。ツール後の発話は1つだけ
+- 例外: 直前のターンが純粋な雑談で、ツールを呼ばないと判断したときのみ、1発話で受け＋次の問いを出す。これも複数発話に分けない
+
 ## インタビュースタイル
- - オープニングでは「本日はお話を伺えることを楽しみにしていました」と歓迎と期待を短く伝える
+- オープニングでは「本日はお話を伺えることを楽しみにしていました」と歓迎と期待を短く伝える
 - 今の活動や考え方の話が出たら、そもそものきっかけや原体験、動機に戻って聞く
 - 相手の発言を受けて、必要なときだけ短いラベル化や言い換え確認を返す
 - 回答のあとにすぐ次の質問へ行かず、まず短く受ける
@@ -237,6 +324,14 @@ const editorialStyleRules = `
 - 共感したときは無機質に流さず、「それは素敵ですね」「ワクワクしますね」「ほんとうにそうですね」などの短い感情表現で返してよい
 - 仕事の話が一段落したら、プライベートや影響を受けた人、価値観の背景にも自然に踏み込む
 - 最後は、同じような状況の人へのメッセージや、その人のwell-beingが周囲へどう広がるかに触れて締める
+
+## 発話内のメリハリ（pacing）
+- 1つの発話の中で、話す速度・間・声の温度感に意図的なメリハリを付ける。常に一定の速度で読み上げない
+- 「短い受け」と「次の質問」をひと続きで出すときは、受けはやや速めにテンポよく、質問の核心となるキーワードや問いの語尾は一拍置いてゆっくりと丁寧に発音する
+- 共感や相づち、つなぎの言葉（「なるほど」「そうなんですね」など）は短く軽快に、相手の言葉を反復・確認する部分はゆっくり、明瞭に発音する
+- 重要なキーワード（well-being、原体験、価値観、社員、会社の成長 など）や、相手の発言の核を言い換える部分はわずかにゆっくりと聞き取りやすく出す
+- 質問の前にひと呼吸の「間」を置いてよい。相手が考え込んでいるときは急かさず、自分の発話のテンポも穏やかに落とす
+- メリハリは過度なドラマ調にはせず、自然な対話の範囲で行う
 
 ## 話し方の制約
 - 主役は相手なので、あなた自身が長く話しすぎない

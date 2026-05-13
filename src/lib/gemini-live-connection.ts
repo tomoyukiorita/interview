@@ -48,7 +48,7 @@ export function getGeminiLiveConnectionUi(
         statusLabel: "接続切れ",
         statusTone: "error",
         notice:
-          "Gemini Live の接続が切れました。今回は再開ハンドルがなく、自動では戻せませんでした。",
+          "Type 2 の接続が切れました。今回は再開ハンドルがなく、自動では戻せませんでした。",
         detail: null,
         canResume: false,
       };
@@ -58,7 +58,7 @@ export function getGeminiLiveConnectionUi(
       statusLabel: "再開失敗",
       statusTone: "error",
       notice:
-        "Gemini Live の再開に失敗しました。再開ボタンから同じ面接状態のまま接続を戻せます。",
+        "Type 2 の再開に失敗しました。再開ボタンから同じ面接状態のまま接続を戻せます。",
       detail: null,
       canResume: state.hasResumableSession,
     };

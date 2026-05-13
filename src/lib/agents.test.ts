@@ -5,6 +5,7 @@ import {
   interviewAgent,
   leadershipWellbeingAgent,
   organizationCultureAgent,
+  setInterviewStyleContext,
   supportAgent,
 } from "./agents";
 import { getScenarioById } from "./interview-config";
@@ -45,6 +46,13 @@ describe("interviewer character prompts", () => {
     expect(instructions).toContain("それは素敵ですね");
     expect(instructions).toContain("受けだけで終わらせない");
     expect(instructions).toContain("同じ発話の中で次の質問まで続ける");
+    expect(instructions).toContain("ツール呼び出し時の沈黙ルール");
+    expect(instructions).toContain("preamble は完全に禁止");
+    expect(instructions).toContain("ツールを呼ぶ前に音声を出さない");
+    expect(instructions).toContain("AI からの音声発話は必ず1つだけ");
+    expect(instructions).toContain("発話内のメリハリ");
+    expect(instructions).toContain("常に一定の速度で読み上げない");
+    expect(instructions).toContain("質問の核心となるキーワードや問いの語尾");
     expect(instructions).toContain("セッションで指定された話し方");
     expect(instructions).toContain("関西弁が指定されている場合");
     expect(instructions).toContain("nextQuestionText の意味は保ったまま");
@@ -113,9 +121,41 @@ describe("interviewer character prompts", () => {
     });
 
     expect(instructions).toContain("セッションで指定された話し方");
-    expect(instructions).toContain("今回は関西弁が指定されているので");
-    expect(instructions).toContain("受け、橋渡し、質問の語尾まで関西弁で統一する");
-    expect(instructions).toContain("nextQuestionText の意味は保ったまま");
+    expect(instructions).toContain("丁寧な関西弁");
+    expect(instructions).toContain("受け、橋渡し、質問の語尾まで関西弁で統一");
+    expect(instructions).toContain("全てのAI音声発話で関西弁を維持する");
+    expect(instructions).toContain("純粋な標準語に戻さない");
+    expect(instructions).toContain("## Language and Dialect");
+    expect(instructions).toContain("発話直前のセルフチェック");
+    expect(instructions).toContain("禁止する文末");
+    expect(instructions).toContain("必須形");
+    expect(instructions).toContain("思てはりますか？");
+    expect(instructions).toContain("感じてはりますか？");
+    expect(instructions).toContain("何やと思いますか？");
+    expect(instructions).toContain("聞かせてもらえますか？");
+    expect(instructions).toContain("文末イントネーション");
+    expect(instructions).toContain("語尾を弱く飲み込まない");
+    expect(instructions).toContain("丁寧形でも抑揚は決して下げない");
+    expect(instructions).toContain("抑揚の幅");
+    expect(instructions).toContain("高起式");
+  });
+
+  it("uses the saved session style when the realtime SDK resolves instructions without context", async () => {
+    setInterviewStyleContext({
+      speechStyle: "kansai",
+      tone: "calm",
+    });
+
+    const instructions = await resolveInstructions(interviewAgent);
+
+    expect(instructions).toContain("## Language and Dialect");
+    expect(instructions).toContain("全てのAI音声発話で関西弁を維持する");
+    expect(instructions).toContain("標準語に戻さない");
+
+    setInterviewStyleContext({
+      speechStyle: "standard",
+      tone: "calm",
+    });
   });
 
   it("adds concrete tone guidance so presets stay distinct during the interview", async () => {

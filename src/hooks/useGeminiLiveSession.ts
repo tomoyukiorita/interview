@@ -18,6 +18,7 @@ import {
   createGeminiInterviewState,
   getGeminiInitialPrompt,
   getGeminiResumePrompt,
+  getGeminiSalvagedUserTurnPrompt,
   runGeminiNextQuestion,
   type GeminiInterviewState,
   type GeminiInterviewToolArgs,
@@ -69,6 +70,13 @@ interface GeminiSessionConfig {
   options?: ConnectOptions;
 }
 
+interface GeminiInputTurnSnapshot {
+  turnId: string;
+  startedAt: number;
+  chunks: Uint8Array[];
+  sampleRate: number;
+}
+
 export function useGeminiLiveSession(): [
   RealtimeSessionState,
   RealtimeSessionActions
@@ -117,6 +125,7 @@ export function useGeminiLiveSession(): [
   const resumeSessionRef = useRef<(() => Promise<void>) | null>(null);
   const hasSentResumePromptRef = useRef(false);
   const pendingResumePromptRef = useRef(false);
+  const pendingSalvagedInputTextRef = useRef<string | null>(null);
   const interviewStateRef = useRef<GeminiInterviewState>(
     createGeminiInterviewState()
   );
@@ -190,6 +199,7 @@ export function useGeminiLiveSession(): [
     manualDisconnectRef.current = false;
     hasSentResumePromptRef.current = false;
     pendingResumePromptRef.current = false;
+    pendingSalvagedInputTextRef.current = null;
   }, [clearOutputAudio]);
 
   useEffect(() => {
@@ -243,6 +253,43 @@ export function useGeminiLiveSession(): [
     pendingOutputTranscriptTextRef.current = "";
   }, [clearOutputAudio]);
 
+  const transcribeInputChunks = useCallback(
+    async (turnId: string, chunks: Uint8Array[], sampleRate: number) => {
+      if (transcribingTurnIdsRef.current.has(turnId)) {
+        return null;
+      }
+      transcribingTurnIdsRef.current.add(turnId);
+
+      try {
+        const wavBytes = encodePcm16Wav(chunks, sampleRate);
+        const file = new File(
+          [wavBytes as unknown as BlobPart],
+          `${turnId}.wav`,
+          {
+            type: "audio/wav",
+          }
+        );
+        const formData = new FormData();
+        formData.set("file", file);
+
+        const response = await fetch("/api/transcribe", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error("OpenAI transcription failed");
+        }
+
+        const data = (await response.json()) as { text?: string };
+        return data.text?.trim() || null;
+      } finally {
+        transcribingTurnIdsRef.current.delete(turnId);
+      }
+    },
+    []
+  );
+
   const flushDeferredResumePrompt = useCallback(() => {
     const action = getGeminiResumePromptAction({
       isResumeSession: pendingResumePromptRef.current,
@@ -251,6 +298,17 @@ export function useGeminiLiveSession(): [
     });
 
     if (action !== "send" || !sessionRef.current) {
+      return;
+    }
+
+    const salvagedText = pendingSalvagedInputTextRef.current;
+    if (salvagedText) {
+      sessionRef.current.sendRealtimeInput({
+        text: getGeminiSalvagedUserTurnPrompt(salvagedText),
+      });
+      pendingSalvagedInputTextRef.current = null;
+      hasSentResumePromptRef.current = true;
+      pendingResumePromptRef.current = false;
       return;
     }
 
@@ -286,30 +344,8 @@ export function useGeminiLiveSession(): [
       return;
     }
 
-    if (transcribingTurnIdsRef.current.has(turnId)) {
-      return;
-    }
-    transcribingTurnIdsRef.current.add(turnId);
-
     try {
-      const wavBytes = encodePcm16Wav(chunks, sampleRate);
-      const file = new File([wavBytes as unknown as BlobPart], `${turnId}.wav`, {
-        type: "audio/wav",
-      });
-      const formData = new FormData();
-      formData.set("file", file);
-
-      const response = await fetch("/api/transcribe", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error("OpenAI transcription failed");
-      }
-
-      const data = (await response.json()) as { text?: string };
-      const text = data.text?.trim();
+      const text = await transcribeInputChunks(turnId, chunks, sampleRate);
 
       if (!text) {
         removeTranscript(turnId);
@@ -326,10 +362,70 @@ export function useGeminiLiveSession(): [
       console.error("Failed to transcribe Gemini input turn:", error);
       removeTranscript(turnId);
     } finally {
-      transcribingTurnIdsRef.current.delete(turnId);
       flushDeferredResumePrompt();
     }
-  }, [flushDeferredResumePrompt, removeTranscript, upsertTranscript]);
+  }, [
+    flushDeferredResumePrompt,
+    removeTranscript,
+    transcribeInputChunks,
+    upsertTranscript,
+  ]);
+
+  const snapshotActiveInputTurn =
+    useCallback((): GeminiInputTurnSnapshot | null => {
+      const turnId = activeInputTurnIdRef.current;
+      const startedAt = activeInputTurnStartedAtRef.current ?? Date.now();
+      const chunks = [...activeInputTurnChunksRef.current];
+      const sampleRate = inputSampleRateRef.current;
+
+      activeInputTurnIdRef.current = null;
+      activeInputTurnStartedAtRef.current = null;
+      activeInputTurnChunksRef.current = [];
+      inputSilenceMsRef.current = 0;
+      preInputChunksRef.current = [];
+
+      if (!turnId || chunks.length === 0) {
+        return null;
+      }
+
+      return {
+        turnId,
+        startedAt,
+        chunks,
+        sampleRate,
+      };
+    }, []);
+
+  const transcribeInputTurnSnapshot = useCallback(
+    async (snapshot: GeminiInputTurnSnapshot) => {
+      try {
+        const text = await transcribeInputChunks(
+          snapshot.turnId,
+          snapshot.chunks,
+          snapshot.sampleRate
+        );
+
+        if (!text) {
+          removeTranscript(snapshot.turnId);
+          return null;
+        }
+
+        upsertTranscript({
+          id: snapshot.turnId,
+          role: "interviewee",
+          text,
+          timestamp: snapshot.startedAt,
+        });
+
+        return text;
+      } catch (error) {
+        console.error("Failed to salvage Gemini input turn:", error);
+        removeTranscript(snapshot.turnId);
+        return null;
+      }
+    },
+    [removeTranscript, transcribeInputChunks, upsertTranscript]
+  );
 
   const handleToolCalls = useCallback(
     (session: GeminiSession, functionCalls: FunctionCall[]) => {
@@ -378,7 +474,6 @@ export function useGeminiLiveSession(): [
 
   const openSession = useCallback(
     async ({
-      mode,
       scenarioId,
       options,
       resumeHandle,
@@ -401,12 +496,12 @@ export function useGeminiLiveSession(): [
 
       const tokenRes = await fetch("/api/gemini-session", { method: "POST" });
       if (!tokenRes.ok) {
-        throw new Error("Gemini セッションの作成に失敗しました");
+        throw new Error("Type 2 セッションの作成に失敗しました");
       }
 
       const tokenData = (await tokenRes.json()) as { apiKey?: string };
       if (!tokenData.apiKey) {
-        throw new Error("Gemini エフェメラルトークンの取得に失敗しました");
+        throw new Error("Type 2 接続トークンの取得に失敗しました");
       }
 
       const speedPreset = normalizeRealtimeSpeedPreset(
@@ -612,7 +707,7 @@ export function useGeminiLiveSession(): [
             }
             setState((prev) => ({
               ...prev,
-              error: event.message || "Gemini Live 接続でエラーが発生しました",
+              error: event.message || "Type 2 接続でエラーが発生しました",
             }));
           },
           onclose: () => {
@@ -643,7 +738,7 @@ export function useGeminiLiveSession(): [
               isSpeaking: false,
               error:
                 prev.error ??
-                "Gemini Live の接続が切れました。再開ハンドルがないため自動再接続できませんでした。",
+                "Type 2 の接続が切れました。再開ハンドルがないため自動再接続できませんでした。",
               resumeFailed: true,
               goAwayTimeLeft: null,
             }));
@@ -703,6 +798,22 @@ export function useGeminiLiveSession(): [
       }
       setCurrentAgent(interviewStateRef.current.currentAgentName);
 
+      const salvagedText = pendingSalvagedInputTextRef.current;
+      if (
+        preserveConversation &&
+        salvagedText &&
+        !activeInputTurnIdRef.current
+      ) {
+        session.sendRealtimeInput({
+          text: getGeminiSalvagedUserTurnPrompt(salvagedText),
+        });
+        pendingSalvagedInputTextRef.current = null;
+        hasSentResumePromptRef.current = true;
+        pendingResumePromptRef.current = false;
+      } else if (preserveConversation && salvagedText) {
+        pendingResumePromptRef.current = true;
+      }
+
       const resumePromptAction = getGeminiResumePromptAction({
         isResumeSession: preserveConversation,
         hasSentResumePrompt: hasSentResumePromptRef.current,
@@ -752,7 +863,7 @@ export function useGeminiLiveSession(): [
         setState((prev) => ({
           ...prev,
           isConnecting: false,
-          error: "Gemini版は現在、自動インタビューのみ対応しています。",
+          error: "Type 2 は現在、自動インタビューのみ対応しています。",
         }));
         return;
       }
@@ -786,6 +897,7 @@ export function useGeminiLiveSession(): [
       interviewStateRef.current = createGeminiInterviewState(scenarioId);
       hasSentResumePromptRef.current = false;
       pendingResumePromptRef.current = false;
+      pendingSalvagedInputTextRef.current = null;
 
       try {
         await openSession({
@@ -796,7 +908,7 @@ export function useGeminiLiveSession(): [
         });
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Gemini Live 接続に失敗しました";
+          err instanceof Error ? err.message : "Type 2 接続に失敗しました";
         cleanupSession();
         setState((prev) => ({
           ...prev,
@@ -819,6 +931,8 @@ export function useGeminiLiveSession(): [
     resumeInFlightRef.current = true;
     hasSentResumePromptRef.current = false;
     pendingResumePromptRef.current = false;
+    pendingSalvagedInputTextRef.current = null;
+    const inputTurnSnapshot = snapshotActiveInputTurn();
     activeSessionTokenRef.current += 1;
     closeCurrentSession();
 
@@ -834,6 +948,15 @@ export function useGeminiLiveSession(): [
     }));
 
     try {
+      if (inputTurnSnapshot) {
+        const salvagedInputText = await transcribeInputTurnSnapshot(
+          inputTurnSnapshot
+        );
+        if (salvagedInputText) {
+          pendingSalvagedInputTextRef.current = salvagedInputText;
+        }
+      }
+
       await openSession({
         ...sessionConfig,
         resumeHandle,
@@ -841,7 +964,7 @@ export function useGeminiLiveSession(): [
       });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Gemini Live の再開に失敗しました";
+        err instanceof Error ? err.message : "Type 2 の再開に失敗しました";
       setState((prev) => ({
         ...prev,
         isConnected: false,
@@ -856,7 +979,12 @@ export function useGeminiLiveSession(): [
     } finally {
       resumeInFlightRef.current = false;
     }
-  }, [closeCurrentSession, openSession]);
+  }, [
+    closeCurrentSession,
+    openSession,
+    snapshotActiveInputTurn,
+    transcribeInputTurnSnapshot,
+  ]);
 
   const disconnect = useCallback(() => {
     manualDisconnectRef.current = true;
@@ -876,6 +1004,7 @@ export function useGeminiLiveSession(): [
       hasResumableSession: false,
     });
     pendingResumePromptRef.current = false;
+    pendingSalvagedInputTextRef.current = null;
   }, [cleanupSession]);
 
   resumeSessionRef.current = resume;

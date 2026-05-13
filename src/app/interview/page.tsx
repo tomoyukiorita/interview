@@ -9,6 +9,14 @@ import {
   normalizeGeminiLiveVoice,
 } from "@/lib/gemini-voice";
 import {
+  DEFAULT_INWORLD_REALTIME_VOICE,
+  normalizeInworldRealtimeVoice,
+} from "@/lib/inworld-realtime-voice";
+import {
+  DEFAULT_INWORLD_REALTIME_VAD_EAGERNESS,
+  normalizeInworldRealtimeVadEagerness,
+} from "@/lib/inworld-realtime-vad";
+import {
   DEFAULT_INTERVIEW_PROVIDER,
   normalizeInterviewProvider,
 } from "@/lib/interview-provider";
@@ -16,10 +24,14 @@ import {
   DEFAULT_REALTIME_SPEED_PRESET,
   DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
   DEFAULT_REALTIME_TONE_PRESET,
+  DEFAULT_REALTIME_TURN_DETECTION_MODE,
+  DEFAULT_REALTIME_VAD_EAGERNESS,
   DEFAULT_SERVER_VAD_SILENCE_DURATION_MS,
   normalizeRealtimeSpeedPreset,
   normalizeRealtimeSpeechStylePreset,
   normalizeRealtimeTonePreset,
+  normalizeRealtimeTurnDetectionMode,
+  normalizeRealtimeVadEagerness,
   normalizeServerVadSilenceDurationMs,
 } from "@/lib/realtime-settings";
 import type { InterviewMode } from "@/lib/types";
@@ -33,12 +45,16 @@ function InterviewPageInner() {
     searchParams.get("provider") || DEFAULT_INTERVIEW_PROVIDER
   );
   const requestedMode = (searchParams.get("mode") || "auto") as InterviewMode;
-  const mode = provider === "gemini" ? "auto" : requestedMode;
+  const mode = provider === "openai" ? requestedMode : "auto";
   const scenarioId = searchParams.get("scenario") || "general";
   const voice =
     provider === "gemini"
       ? normalizeGeminiLiveVoice(
           searchParams.get("voice") || DEFAULT_GEMINI_LIVE_VOICE
+        )
+      : provider === "inworld"
+      ? normalizeInworldRealtimeVoice(
+          searchParams.get("voice") || DEFAULT_INWORLD_REALTIME_VOICE
         )
       : normalizeRealtimeVoice(
           searchParams.get("voice") || DEFAULT_REALTIME_VOICE
@@ -56,6 +72,16 @@ function InterviewPageInner() {
     searchParams.get("silenceDurationMs") ||
       String(DEFAULT_SERVER_VAD_SILENCE_DURATION_MS)
   );
+  const inworldVadEagerness = normalizeInworldRealtimeVadEagerness(
+    searchParams.get("inworldVadEagerness") ||
+      DEFAULT_INWORLD_REALTIME_VAD_EAGERNESS
+  );
+  const turnDetectionMode = normalizeRealtimeTurnDetectionMode(
+    searchParams.get("turnDetectionMode") || DEFAULT_REALTIME_TURN_DETECTION_MODE
+  );
+  const vadEagerness = normalizeRealtimeVadEagerness(
+    searchParams.get("vadEagerness") || DEFAULT_REALTIME_VAD_EAGERNESS
+  );
 
   const handleEnd = () => {
     router.push("/");
@@ -71,6 +97,9 @@ function InterviewPageInner() {
       speechStyle={speechStyle}
       tone={tone}
       silenceDurationMs={silenceDurationMs}
+      inworldVadEagerness={inworldVadEagerness}
+      turnDetectionMode={turnDetectionMode}
+      vadEagerness={vadEagerness}
       onEnd={handleEnd}
     />
   );

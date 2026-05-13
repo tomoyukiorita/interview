@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { buildOpenAIRealtimeSessionConfig } from "@/lib/realtime-model";
 
 export async function POST() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -20,10 +21,7 @@ export async function POST() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          session: {
-            type: "realtime",
-            model: "gpt-realtime-1.5",
-          },
+          session: buildOpenAIRealtimeSessionConfig(),
         }),
       }
     );

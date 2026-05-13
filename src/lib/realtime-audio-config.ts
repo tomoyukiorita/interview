@@ -1,3 +1,8 @@
+import type {
+  RealtimeTurnDetectionMode,
+  RealtimeVadEagerness,
+} from "./types";
+
 export function buildMicrophoneConstraints(): MediaStreamConstraints {
   return {
     audio: {
@@ -8,12 +13,52 @@ export function buildMicrophoneConstraints(): MediaStreamConstraints {
   };
 }
 
+interface ServerVadTurnDetection {
+  type: "server_vad";
+  threshold: number;
+  prefixPaddingMs: number;
+  silenceDurationMs: number;
+}
+
+interface SemanticVadTurnDetection {
+  type: "semantic_vad";
+  eagerness: RealtimeVadEagerness;
+}
+
+export type RealtimeTurnDetectionConfig =
+  | ServerVadTurnDetection
+  | SemanticVadTurnDetection;
+
+export function buildRealtimeTurnDetectionConfig({
+  mode,
+  silenceDurationMs,
+  eagerness,
+}: {
+  mode: RealtimeTurnDetectionMode;
+  silenceDurationMs: number;
+  eagerness: RealtimeVadEagerness;
+}): RealtimeTurnDetectionConfig {
+  if (mode === "semantic_vad") {
+    return {
+      type: "semantic_vad",
+      eagerness,
+    };
+  }
+
+  return {
+    type: "server_vad",
+    threshold: 0.5,
+    prefixPaddingMs: 300,
+    silenceDurationMs,
+  };
+}
+
 export function buildRealtimeInputAudioConfig({
   transcriptionModel,
-  silenceDurationMs,
+  turnDetection,
 }: {
   transcriptionModel: string;
-  silenceDurationMs: number;
+  turnDetection: RealtimeTurnDetectionConfig;
 }) {
   return {
     noiseReduction: {
@@ -22,11 +67,6 @@ export function buildRealtimeInputAudioConfig({
     transcription: {
       model: transcriptionModel,
     },
-    turnDetection: {
-      type: "server_vad" as const,
-      threshold: 0.5,
-      prefixPaddingMs: 300,
-      silenceDurationMs,
-    },
+    turnDetection,
   };
 }
