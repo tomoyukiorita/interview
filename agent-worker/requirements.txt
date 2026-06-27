@@ -1,0 +1,7 @@
+# Type 6 LiveKit turn-detector worker.
+# The audio-native LiveKit Turn Detector v1 is bundled with livekit-agents
+# (>=1.6.1) and exposed via livekit.agents.inference.TurnDetector — no separate
+# STT or the deprecated livekit-plugins-turn-detector package is required.
+livekit-agents>=1.6.1
+livekit-plugins-silero>=1.6.0
+python-dotenv>=1.0.0

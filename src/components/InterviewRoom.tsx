@@ -5,6 +5,7 @@ import { useInterviewSession } from "@/hooks/useInterviewSession";
 import { useAudioAnalysis } from "@/hooks/useAudioAnalysis";
 import { useTabCapture } from "@/hooks/useTabCapture";
 import { AudioVisualizer } from "./AudioVisualizer";
+import { HumanStatePanel } from "./HumanStatePanel";
 import { TranscriptPanel } from "./TranscriptPanel";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { SuggestionPanel } from "./SuggestionPanel";
@@ -16,6 +17,8 @@ import type {
   InterviewProvider,
   InterviewMode,
   InterviewVoice,
+  NaturalVoiceBrainModel,
+  NaturalVoiceTtsProvider,
   InworldRealtimeVadEagerness,
   RealtimeSpeedPreset,
   RealtimeSpeechStylePreset,
@@ -42,6 +45,7 @@ interface InterviewRoomProps {
   provider: InterviewProvider;
   mode: InterviewMode;
   scenarioId: string;
+  url?: string;
   voice: InterviewVoice;
   speed: RealtimeSpeedPreset;
   speechStyle: RealtimeSpeechStylePreset;
@@ -50,6 +54,8 @@ interface InterviewRoomProps {
   inworldVadEagerness: InworldRealtimeVadEagerness;
   turnDetectionMode: RealtimeTurnDetectionMode;
   vadEagerness: RealtimeVadEagerness;
+  ttsProvider: NaturalVoiceTtsProvider;
+  brainModel?: NaturalVoiceBrainModel;
   onEnd: () => void;
 }
 
@@ -57,6 +63,7 @@ export function InterviewRoom({
   provider,
   mode,
   scenarioId,
+  url,
   voice,
   speed,
   speechStyle,
@@ -65,6 +72,8 @@ export function InterviewRoom({
   inworldVadEagerness,
   turnDetectionMode,
   vadEagerness,
+  ttsProvider,
+  brainModel,
   onEnd,
 }: InterviewRoomProps) {
   const [session, sessionActions] = useInterviewSession(provider);
@@ -81,6 +90,23 @@ export function InterviewRoom({
   const isOnlineSupport = mode === "online_support";
   const showEmotion = mode !== undefined;
   const hasInterviewStarted = startTime !== null || session.transcript.length > 0;
+
+  // Type 5: run company research up front so the interview can start
+  // instantly; the start button stays locked until research completes.
+  const prepareResearch = sessionActions.prepareResearch;
+  const usesResearchPhase =
+    (provider === "natural" || provider === "natural2") &&
+    Boolean(prepareResearch);
+  const researchStatus = usesResearchPhase
+    ? session.researchStatus ?? "idle"
+    : undefined;
+  useEffect(() => {
+    if (!usesResearchPhase || hasInterviewStarted) return;
+    void prepareResearch?.(url);
+  }, [usesResearchPhase, hasInterviewStarted, prepareResearch, url]);
+  const isResearching =
+    usesResearchPhase &&
+    (researchStatus === "loading" || researchStatus === "idle");
   const geminiConnectionUi =
     provider === "gemini"
       ? getGeminiLiveConnectionUi({
@@ -128,9 +154,18 @@ export function InterviewRoom({
     }
   }, [session.transcript, analysisActions, startTime]);
 
-  const handleEmotionChange = useCallback((emotion: EmotionState) => {
-    setEmotionTimeline((prev) => [...prev, emotion]);
-  }, []);
+  const pushHumanSignals = sessionActions.pushHumanSignals;
+  const handleEmotionChange = useCallback(
+    (emotion: EmotionState) => {
+      setEmotionTimeline((prev) => [...prev, emotion]);
+      // Type 6: feed the fused emotion into the Human State Engine so the
+      // orchestrator can drive engagement-aware empathy / backchannels.
+      if (provider === "natural2") {
+        pushHumanSignals?.({ emotion });
+      }
+    },
+    [provider, pushHumanSignals]
+  );
 
   const enrichedTranscript: TranscriptEntry[] = session.transcript.map(
     (entry) => {
@@ -164,6 +199,7 @@ export function InterviewRoom({
 
       await sessionActions.connect(mode, scenarioId, {
         intervieweeStream,
+        url,
         voice,
         speed,
         speechStyle,
@@ -172,6 +208,9 @@ export function InterviewRoom({
         inworldVadEagerness,
         turnDetectionMode,
         vadEagerness,
+        ttsProvider,
+        brainModel,
+        variant: provider === "natural2" ? "type6" : "type5",
       });
       setStartTime(Date.now());
 
@@ -180,6 +219,7 @@ export function InterviewRoom({
       }, 500);
     } else {
       await sessionActions.connect(mode, scenarioId, {
+        url,
         voice,
         speed,
         speechStyle,
@@ -188,6 +228,9 @@ export function InterviewRoom({
         inworldVadEagerness,
         turnDetectionMode,
         vadEagerness,
+        ttsProvider,
+        brainModel,
+        variant: provider === "natural2" ? "type6" : "type5",
       });
       setStartTime(Date.now());
 
@@ -201,6 +244,7 @@ export function InterviewRoom({
   }, [
     mode,
     scenarioId,
+    url,
     voice,
     speed,
     speechStyle,
@@ -209,6 +253,9 @@ export function InterviewRoom({
     inworldVadEagerness,
     turnDetectionMode,
     vadEagerness,
+    ttsProvider,
+    brainModel,
+    provider,
     sessionActions,
     analysisActions,
     tabCaptureActions,
@@ -400,6 +447,32 @@ export function InterviewRoom({
               </div>
             )}
 
+            {usesResearchPhase && url && (
+              <div className="rounded-lg border border-border bg-card p-4 text-left space-y-1">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  {isResearching ? (
+                    <Loader2 className="w-4 h-4 shrink-0 animate-spin text-accent" />
+                  ) : researchStatus === "ready" ? (
+                    <span className="w-2 h-2 shrink-0 rounded-full bg-success" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 text-warning" />
+                  )}
+                  {isResearching
+                    ? "企業サイトをリサーチしています…"
+                    : researchStatus === "ready"
+                      ? "リサーチが完了しました"
+                      : "リサーチを取得できませんでした"}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {isResearching
+                    ? "ミッション・事業・理念の手がかりを収集中です。完了するとインタビューを開始できます（1分ほどかかることがあります）。"
+                    : researchStatus === "ready"
+                      ? "サイトの言葉を踏まえた質問でインタビューを進めます。"
+                      : "リサーチなしの一般的なインタビューとして開始できます。"}
+                </p>
+              </div>
+            )}
+
             {(tabCapture.error || session.error) && (
               <div className="flex items-center gap-2 text-destructive text-sm justify-center">
                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -409,14 +482,21 @@ export function InterviewRoom({
 
             <button
               onClick={handleConnect}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-accent-foreground font-medium hover:bg-accent/90 transition-colors"
+              disabled={isResearching}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-accent-foreground font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isOnlineSupport ? (
+              {isResearching ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : isOnlineSupport ? (
                 <Monitor className="w-5 h-5" />
               ) : (
                 <Phone className="w-5 h-5" />
               )}
-              {isOnlineSupport ? "タブ音声をキャプチャして開始" : "インタビューを開始"}
+              {isResearching
+                ? "リサーチ完了までお待ちください"
+                : isOnlineSupport
+                  ? "タブ音声をキャプチャして開始"
+                  : "インタビューを開始"}
             </button>
           </div>
         </div>
@@ -440,6 +520,18 @@ export function InterviewRoom({
               className="h-[120px]"
             />
           </div>
+
+          {/* Type 6: Human State Engine debug panel */}
+          {provider === "natural2" && (
+            <div className="px-6 pt-3">
+              <HumanStatePanel
+                humanState={session.humanState}
+                action={session.orchestratorAction}
+                livekitActive={session.livekitTurnDetectorActive}
+                meaning={session.meaning}
+              />
+            </div>
+          )}
 
           {/* Panels */}
           <div className="flex-1 flex gap-4 px-6 py-4 min-h-0">

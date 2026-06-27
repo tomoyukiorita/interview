@@ -1,5 +1,11 @@
 export type InterviewMode = "auto" | "support" | "online_support";
-export type InterviewProvider = "openai" | "gemini" | "inworld";
+export type InterviewProvider =
+  | "openai"
+  | "gemini"
+  | "inworld"
+  | "wellbeing"
+  | "natural"
+  | "natural2";
 export type RealtimeVoice =
   | "marin"
   | "cedar"
@@ -20,6 +26,12 @@ export type InterviewVoice =
 export type RealtimeSpeedPreset = "slow" | "normal" | "fast";
 export type RealtimeTonePreset = "calm" | "bright" | "soft" | "firm";
 export type RealtimeSpeechStylePreset = "standard" | "kansai";
+export type NaturalVoiceTtsProvider = "elevenlabs" | "fish";
+export type NaturalVoiceBrainModel =
+  | "gemini-3.5-flash"
+  | "claude-fable-5"
+  | "gpt-5.5"
+  | "claude-opus-4-8";
 export type ServerVadSilenceDurationMs = 300 | 500 | 800 | 1200 | 1500;
 export type InworldRealtimeVadEagerness = "low" | "medium" | "high";
 export type RealtimeTurnDetectionMode = "server_vad" | "semantic_vad";
@@ -46,6 +58,77 @@ export interface EmotionState {
   engagement: number;
   label: EmotionLabel;
   timestamp: number;
+}
+
+/**
+ * Type 6 only. The fused estimate produced by the Human State Engine from
+ * VAD, the LiveKit turn detector, audio features, and emotion. All scores are
+ * 0..1. `recommendedAction` is a soft hint; the Response Orchestrator owns the
+ * final decision (cooldowns, suppression, speaking state).
+ */
+export interface HumanState {
+  /** Confidence that the interviewee has actually finished their turn. */
+  endOfTurn: number;
+  /** How strongly we should keep waiting (high while thinking / mid-thought). */
+  waitScore: number;
+  /** Likelihood the interviewee is mid-thought (hesitation / trailing pause). */
+  thinking: number;
+  /** Latest emotion estimate, if fresh. */
+  emotion: EmotionState | null;
+  /** Engagement 0..1 (passed through from emotion when available). */
+  engagement: number;
+  /** Soft suggestion; the orchestrator may override it. */
+  recommendedAction: OrchestratorActionKind;
+  updatedAt: number;
+  /** Per-signal explainability for the debug panel. */
+  signals: {
+    openAiVad: HumanStateSignalContribution;
+    livekit: HumanStateSignalContribution;
+    audio: HumanStateSignalContribution;
+    emotion: HumanStateSignalContribution;
+  };
+  /** Raw derived prosodic/transcript features (debug + tuning). */
+  features: {
+    silenceMs: number | null;
+    /** Characters per second of the latest speech segment. */
+    speechRate: number | null;
+    /** Filler ("えーと"/"あのー"…) occurrences in the pending utterance. */
+    fillerCount: number;
+    /** Recent pitch range in Hz. */
+    pitchRange: number | null;
+    /** Recent loudness trend, -1 (falling) .. 1 (rising). */
+    volumeTrend: number | null;
+  };
+}
+
+/** Debug view of one signal's freshness-adjusted contribution to endOfTurn. */
+export interface HumanStateSignalContribution {
+  /** Whether the signal was present and fresh enough to count. */
+  active: boolean;
+  /** Freshness weight 0..1 after staleness decay. */
+  weight: number;
+  /** The signal's own end-of-turn estimate 0..1 (null when inactive). */
+  value: number | null;
+  /** Age in ms of the signal at evaluation time (null when never set). */
+  ageMs: number | null;
+}
+
+export type OrchestratorActionKind =
+  | "WAIT"
+  | "BACKCHANNEL"
+  | "EMPATHY"
+  | "FOLLOW_UP";
+
+/**
+ * Type 6 only. The Response Orchestrator's decision for the current tick.
+ * BACKCHANNEL/EMPATHY carry a templated `phrase` to speak immediately via TTS;
+ * FOLLOW_UP releases the reasoning brain; WAIT does nothing.
+ */
+export interface OrchestratorAction {
+  kind: OrchestratorActionKind;
+  reason: string;
+  /** Phrase to speak for BACKCHANNEL / EMPATHY. */
+  phrase?: string;
 }
 
 export interface InterviewQuestion {

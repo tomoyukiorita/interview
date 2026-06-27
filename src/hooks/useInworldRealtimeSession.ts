@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { buildMicrophoneConstraints } from "@/lib/realtime-audio-config";
+import { requestMicrophoneStream } from "@/lib/realtime-audio-config";
 import {
   DEFAULT_REALTIME_SPEED_PRESET,
   DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
@@ -207,7 +207,7 @@ export function useInworldRealtimeSession(): [
         ] = await Promise.all([
           import("@openai/agents/realtime"),
           import("@/lib/agents"),
-          navigator.mediaDevices.getUserMedia(buildMicrophoneConstraints()),
+          requestMicrophoneStream(),
           fetchInworldSessionConfig(),
         ]);
 

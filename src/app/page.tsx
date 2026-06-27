@@ -43,6 +43,8 @@ import type {
   InworldRealtimeVadEagerness,
   InworldRealtimeVoice,
   InterviewProvider,
+  NaturalVoiceBrainModel,
+  NaturalVoiceTtsProvider,
   RealtimeSpeedPreset,
   RealtimeSpeechStylePreset,
   RealtimeTonePreset,
@@ -120,6 +122,10 @@ export default function Home() {
     useState<RealtimeSpeechStylePreset>(DEFAULT_REALTIME_SPEECH_STYLE_PRESET);
   const [selectedTone, setSelectedTone] =
     useState<RealtimeTonePreset>(DEFAULT_REALTIME_TONE_PRESET);
+  const [selectedTtsProvider, setSelectedTtsProvider] =
+    useState<NaturalVoiceTtsProvider>("elevenlabs");
+  const [selectedBrainModel, setSelectedBrainModel] =
+    useState<NaturalVoiceBrainModel>("gemini-3.5-flash");
   const [selectedSilenceDurationMs, setSelectedSilenceDurationMs] =
     useState<ServerVadSilenceDurationMs>(DEFAULT_SERVER_VAD_SILENCE_DURATION_MS);
   const [selectedInworldVadEagerness, setSelectedInworldVadEagerness] =
@@ -130,6 +136,12 @@ export default function Home() {
     useState<RealtimeTurnDetectionMode>(DEFAULT_REALTIME_TURN_DETECTION_MODE);
   const [selectedVadEagerness, setSelectedVadEagerness] =
     useState<RealtimeVadEagerness>(DEFAULT_REALTIME_VAD_EAGERNESS);
+  const [companyUrl, setCompanyUrl] = useState("");
+
+  // Type 5 and Type 6 share the natural-voice UI surface (research URL, brain
+  // engine, fixed voice, turn-detection tuning). Type 6 is Fish-only.
+  const isNaturalFamily =
+    selectedProvider === "natural" || selectedProvider === "natural2";
 
   const handleStart = () => {
     const isAutoOnlyProvider = selectedProvider !== "openai";
@@ -150,7 +162,16 @@ export default function Home() {
       inworldVadEagerness: selectedInworldVadEagerness,
       turnDetectionMode: selectedTurnDetectionMode,
       vadEagerness: selectedVadEagerness,
+      // Type 6 is Fish-only regardless of the (hidden) TTS toggle.
+      ttsProvider: selectedProvider === "natural2" ? "fish" : selectedTtsProvider,
+      brainModel: selectedBrainModel,
     });
+    if (
+      (selectedProvider === "wellbeing" || isNaturalFamily) &&
+      companyUrl.trim()
+    ) {
+      params.set("url", companyUrl.trim());
+    }
     router.push(`/interview?${params.toString()}`);
   };
 
@@ -237,12 +258,140 @@ export default function Home() {
                     ? "現在の標準版です。複数の音声から選んで音声インタビューできます。"
                     : provider === "gemini"
                     ? "低レイテンシ版です。まずは自動インタビューのみ対応します。"
-                    : "音声品質を重視した低レイテンシ版です。自動インタビューのみ対応します。"}
+                    : provider === "inworld"
+                    ? "音声品質を重視した低レイテンシ版です。自動インタビューのみ対応します。"
+                    : provider === "wellbeing"
+                    ? "会社URLから骨子を作り、ロジャース流の傾聴で内省を促すwell-being対話版です。ネイティブ音声でそのまま話します。"
+                    : provider === "natural"
+                    ? "自然な日本語発話を重視したwell-being対話版です。対話制御と音声表現を分けて、抑揚と間を改善します。"
+                    : "Type 5を土台に、発話終了/思考中/感情を統合判定するHuman State Engineと、待つ/相槌/共感/深掘りを選ぶResponse Orchestratorを追加した版です。さらにMeaning Engineが事実→感情→価値観→意思決定→人生観→学びと話を掘り下げます。LiveKit Turn Detectorにも対応。音声はFish固定。"}
                 </div>
               </button>
             ))}
           </div>
         </div>
+
+        {(selectedProvider === "wellbeing" || isNaturalFamily) && (
+          <div className="mt-6">
+            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+              会社URL（任意）
+            </h3>
+            <input
+              type="url"
+              inputMode="url"
+              value={companyUrl}
+              onChange={(e) => setCompanyUrl(e.target.value)}
+              placeholder="https://example.com"
+              className="w-full rounded-lg border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-accent focus:outline-none"
+            />
+            <p className="text-xs text-muted-foreground mt-2">
+              入力すると、その会社の社長にwell-beingインタビューする前提で骨子を自動生成します。空欄でも一般的な骨子で開始できます。
+              {selectedProvider === "natural"
+                ? " Type 5では音声はElevenLabsの環境変数設定を使います。"
+                : selectedProvider === "natural2"
+                ? " Type 6では音声はFish Audioの環境変数設定を使います。"
+                : ""}
+            </p>
+          </div>
+        )}
+
+        {selectedProvider === "natural" && (
+          <div className="mt-6">
+            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+              Type 5 音声エンジン
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[
+                {
+                  id: "elevenlabs" as const,
+                  label: "ElevenLabs",
+                  description:
+                    "表現力と声質の選択肢を重視します。現在のType 5既定です。",
+                },
+                {
+                  id: "fish" as const,
+                  label: "Fish Audio",
+                  description:
+                    "WebSocket streaming + PCMで低レイテンシを狙います。日本語読み制御も試しやすい構成です。",
+                },
+              ].map((provider) => (
+                <button
+                  key={provider.id}
+                  onClick={() => setSelectedTtsProvider(provider.id)}
+                  className={cn(
+                    "w-full rounded-lg border p-4 text-left transition-colors",
+                    selectedTtsProvider === provider.id
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="font-medium text-foreground text-sm">
+                    {provider.label}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {provider.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isNaturalFamily && (
+          <div className="mt-6">
+            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+              {selectedProvider === "natural2"
+                ? "Type 6 思考エンジン"
+                : "Type 5 思考エンジン"}
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[
+                {
+                  id: "gemini-3.5-flash" as const,
+                  label: "モデル1（高速）",
+                  description:
+                    "応答が速く、会話のテンポを最優先する構成です。現在の既定です。",
+                },
+                {
+                  id: "claude-fable-5" as const,
+                  label: "モデル2（高推論）",
+                  description:
+                    "応答まで数秒の間がありますが、見立ての鋭さと質問の深さを優先します。",
+                },
+                {
+                  id: "gpt-5.5" as const,
+                  label: "モデル3（GPT-5.5）",
+                  description:
+                    "OpenAIの最新世代。指示追従と実行品質が高く、バランス型の構成です。",
+                },
+                {
+                  id: "claude-opus-4-8" as const,
+                  label: "モデル4（Opus 4.8）",
+                  description:
+                    "Anthropic最上位。最も深い推論を狙いますが、応答までの間は長めです。",
+                },
+              ].map((model) => (
+                <button
+                  key={model.id}
+                  onClick={() => setSelectedBrainModel(model.id)}
+                  className={cn(
+                    "w-full rounded-lg border p-4 text-left transition-colors",
+                    selectedBrainModel === model.id
+                      ? "border-accent bg-accent/5"
+                      : "border-border bg-card hover:border-muted-foreground/30"
+                  )}
+                >
+                  <div className="font-medium text-foreground text-sm">
+                    {model.label}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {model.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Mode selection */}
@@ -396,7 +545,8 @@ export default function Home() {
             音声
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {selectedProvider === "openai" &&
+            {(selectedProvider === "openai" ||
+              selectedProvider === "wellbeing") &&
               VISIBLE_REALTIME_VOICE_OPTIONS.map((option) => (
                 <button
                   key={option.id}
@@ -519,6 +669,28 @@ export default function Home() {
                   )}
                 </button>
               ))}
+            {isNaturalFamily &&
+              (() => {
+                // Type 6 is Fish-only; Type 5 follows the TTS engine toggle.
+                const usesFish =
+                  selectedProvider === "natural2" || selectedTtsProvider === "fish";
+                const typeLabel =
+                  selectedProvider === "natural2" ? "Type 6" : "Type 5";
+                return (
+                  <div className="rounded-lg border border-accent bg-accent/5 p-4 md:col-span-2">
+                    <div className="font-medium text-foreground text-sm">
+                      {usesFish ? "Fish Audio 固定音声" : "ElevenLabs 固定音声"}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {typeLabel}は自然な日本語発話を優先し、サーバー側の
+                      {usesFish
+                        ? " FISH_AUDIO_REFERENCE_ID を使います。"
+                        : " ELEVENLABS_VOICE_ID を使います。"}
+                      声質の切り替えUIは次段階で追加できます。
+                    </div>
+                  </div>
+                );
+              })()}
           </div>
         </div>
 
@@ -608,7 +780,7 @@ export default function Home() {
             発話終わり判定
           </h3>
 
-          {selectedProvider === "openai" && (
+          {(selectedProvider === "openai" || isNaturalFamily) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
               {REALTIME_TURN_DETECTION_OPTIONS.map((option) => (
                 <button
@@ -654,7 +826,7 @@ export default function Home() {
                 </button>
               ))}
 
-            {selectedProvider === "openai" &&
+            {(selectedProvider === "openai" || isNaturalFamily) &&
               selectedTurnDetectionMode === "semantic_vad" &&
               REALTIME_VAD_EAGERNESS_OPTIONS.map((option) => (
                 <button
@@ -678,6 +850,8 @@ export default function Home() {
 
             {((selectedProvider === "openai" &&
               selectedTurnDetectionMode === "server_vad") ||
+              (isNaturalFamily &&
+                selectedTurnDetectionMode === "server_vad") ||
               selectedProvider === "gemini") &&
               SERVER_VAD_SILENCE_OPTIONS.map((option) => (
                 <button

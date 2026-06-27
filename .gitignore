@@ -46,3 +46,9 @@ next-env.d.ts
 
 # local agent state (oh-my-claudecode)
 /.omc/
+
+# python agent worker (LiveKit turn detector)
+agent-worker/.venv/
+agent-worker/__pycache__/
+**/__pycache__/
+*.pyc

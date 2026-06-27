@@ -73,10 +73,10 @@ describe("realtime settings helpers", () => {
 
   it("maps presets to session-ready values", () => {
     expect(getRealtimeSpeedValue("slow")).toBe(0.9);
-    expect(getRealtimeSpeedValue("normal")).toBe(1);
+    expect(getRealtimeSpeedValue("normal")).toBe(0.95);
     expect(getRealtimeSpeedValue("fast")).toBe(1.15);
     expect(getRealtimeSpeedInstruction("slow")).toContain("少しゆっくり");
-    expect(getRealtimeSpeedInstruction("normal")).toContain("標準的");
+    expect(getRealtimeSpeedInstruction("normal")).toContain("息継ぎ");
     expect(getRealtimeSpeedInstruction("fast")).toContain("少し速め");
 
     expect(getRealtimeToneInstruction("calm")).toContain("間を急がず");

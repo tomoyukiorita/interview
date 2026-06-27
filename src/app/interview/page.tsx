@@ -34,7 +34,11 @@ import {
   normalizeRealtimeVadEagerness,
   normalizeServerVadSilenceDurationMs,
 } from "@/lib/realtime-settings";
-import type { InterviewMode } from "@/lib/types";
+import type {
+  InterviewMode,
+  NaturalVoiceBrainModel,
+  NaturalVoiceTtsProvider,
+} from "@/lib/types";
 import { Loader2 } from "lucide-react";
 
 function InterviewPageInner() {
@@ -47,6 +51,7 @@ function InterviewPageInner() {
   const requestedMode = (searchParams.get("mode") || "auto") as InterviewMode;
   const mode = provider === "openai" ? requestedMode : "auto";
   const scenarioId = searchParams.get("scenario") || "general";
+  const companyUrl = searchParams.get("url") || "";
   const voice =
     provider === "gemini"
       ? normalizeGeminiLiveVoice(
@@ -82,6 +87,25 @@ function InterviewPageInner() {
   const vadEagerness = normalizeRealtimeVadEagerness(
     searchParams.get("vadEagerness") || DEFAULT_REALTIME_VAD_EAGERNESS
   );
+  // Type 6 (natural2) is Fish-only; ignore any other ttsProvider value.
+  const ttsProvider: NaturalVoiceTtsProvider =
+    provider === "natural2"
+      ? "fish"
+      : searchParams.get("ttsProvider") === "fish"
+      ? "fish"
+      : "elevenlabs";
+  const brainModelParam = searchParams.get("brainModel");
+  const normalizedBrainModel: NaturalVoiceBrainModel =
+    brainModelParam === "claude-fable-5" ||
+    brainModelParam === "gpt-5.5" ||
+    brainModelParam === "claude-opus-4-8"
+      ? brainModelParam
+      : "gemini-3.5-flash";
+  // Type 6 leads with GPT-5.5 as the reasoning brain.
+  const brainModel: NaturalVoiceBrainModel =
+    provider === "natural2" && !brainModelParam
+      ? "gpt-5.5"
+      : normalizedBrainModel;
 
   const handleEnd = () => {
     router.push("/");
@@ -92,6 +116,7 @@ function InterviewPageInner() {
       provider={provider}
       mode={mode}
       scenarioId={scenarioId}
+      url={companyUrl}
       voice={voice}
       speed={speed}
       speechStyle={speechStyle}
@@ -100,6 +125,8 @@ function InterviewPageInner() {
       inworldVadEagerness={inworldVadEagerness}
       turnDetectionMode={turnDetectionMode}
       vadEagerness={vadEagerness}
+      ttsProvider={ttsProvider}
+      brainModel={brainModel}
       onEnd={handleEnd}
     />
   );

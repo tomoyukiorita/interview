@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { encodePcm16Wav } from "@/lib/audio-wav";
-import { buildMicrophoneConstraints } from "@/lib/realtime-audio-config";
+import { requestMicrophoneStream } from "@/lib/realtime-audio-config";
 import {
   DEFAULT_REALTIME_SPEED_PRESET,
   DEFAULT_REALTIME_SPEECH_STYLE_PRESET,
@@ -489,7 +489,7 @@ export function useGeminiLiveSession(): [
         import("@google/genai"),
         mediaStreamRef.current
           ? Promise.resolve(mediaStreamRef.current)
-          : navigator.mediaDevices.getUserMedia(buildMicrophoneConstraints()),
+          : requestMicrophoneStream(),
       ]);
 
       mediaStreamRef.current = micStream;

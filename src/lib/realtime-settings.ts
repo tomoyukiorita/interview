@@ -25,9 +25,10 @@ export const REALTIME_SPEED_PRESETS: Array<{
   {
     id: "normal",
     label: "標準",
-    description: "自然でバランスのよい速度です。",
-    value: 1,
-    instruction: "話すテンポは標準的で自然な速さにしてください。",
+    description: "少し余白を持たせた、聞き取りやすい標準速度です。",
+    value: 0.95,
+    instruction:
+      "話すテンポは少し余白のある自然な速さにし、文と文の間で軽く息継ぎを感じられる間を取ってください。",
   },
   {
     id: "fast",
@@ -271,7 +272,7 @@ export function getRealtimeSpeechStyleInstruction(
 
 const REALTIME_SPEED_PRESET_MAP: Record<RealtimeSpeedPreset, number> = {
   slow: 0.9,
-  normal: 1,
+  normal: 0.95,
   fast: 1.15,
 };
 
@@ -279,7 +280,8 @@ const REALTIME_SPEED_PRESET_INSTRUCTION_MAP: Record<RealtimeSpeedPreset, string>
   {
     slow:
       "話すテンポは少しゆっくりめにし、間もやや丁寧に取ってください。",
-    normal: "話すテンポは標準的で自然な速さにしてください。",
+    normal:
+      "話すテンポは少し余白のある自然な速さにし、文と文の間で軽く息継ぎを感じられる間を取ってください。",
     fast:
       "話すテンポは少し速めにしつつ、聞き取りやすさは崩さないでください。",
   };

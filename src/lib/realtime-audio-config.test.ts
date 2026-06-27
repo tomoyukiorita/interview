@@ -72,6 +72,38 @@ describe("realtime audio config helpers", () => {
     });
   });
 
+  it("embeds create/interrupt response flags only when provided", () => {
+    expect(
+      buildRealtimeTurnDetectionConfig({
+        mode: "server_vad",
+        silenceDurationMs: 1000,
+        eagerness: "medium",
+        createResponse: false,
+        interruptResponse: false,
+      })
+    ).toEqual({
+      type: "server_vad",
+      threshold: 0.5,
+      prefixPaddingMs: 300,
+      silenceDurationMs: 1000,
+      createResponse: false,
+      interruptResponse: false,
+    });
+
+    expect(
+      buildRealtimeTurnDetectionConfig({
+        mode: "semantic_vad",
+        silenceDurationMs: 1000,
+        eagerness: "low",
+        createResponse: false,
+      })
+    ).toEqual({
+      type: "semantic_vad",
+      eagerness: "low",
+      createResponse: false,
+    });
+  });
+
   it("forwards a semantic_vad turnDetection without altering it", () => {
     const turnDetection = buildRealtimeTurnDetectionConfig({
       mode: "semantic_vad",

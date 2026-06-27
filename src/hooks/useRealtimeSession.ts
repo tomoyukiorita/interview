@@ -3,9 +3,9 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 import { DEFAULT_REALTIME_VOICE, normalizeRealtimeVoice } from "@/lib/realtime-voice";
 import {
-  buildMicrophoneConstraints,
   buildRealtimeInputAudioConfig,
   buildRealtimeTurnDetectionConfig,
+  requestMicrophoneStream,
 } from "@/lib/realtime-audio-config";
 import {
   DEFAULT_REALTIME_SPEED_PRESET,
@@ -28,6 +28,7 @@ import {
 } from "@/lib/realtime-model";
 import { appendUniqueTranscriptEntries } from "@/lib/transcript-dedupe";
 import type {
+  EmotionState,
   InterviewVoice,
   InterviewMode,
   InworldRealtimeVadEagerness,
@@ -37,6 +38,8 @@ import type {
   RealtimeTonePreset,
   RealtimeTurnDetectionMode,
   RealtimeVadEagerness,
+  NaturalVoiceBrainModel,
+  NaturalVoiceTtsProvider,
   ServerVadSilenceDurationMs,
   TranscriptEntry,
 } from "@/lib/types";
@@ -51,6 +54,9 @@ export interface AiSuggestion {
   timestamp: number;
 }
 
+/** Pre-interview company research progress (Type 5 only). */
+export type ResearchPrepStatus = "idle" | "loading" | "ready" | "failed";
+
 export interface RealtimeSessionState {
   isConnected: boolean;
   isConnecting: boolean;
@@ -64,6 +70,24 @@ export interface RealtimeSessionState {
   resumeFailed: boolean;
   goAwayTimeLeft: string | null;
   hasResumableSession: boolean;
+  /** Set only by sessions that pre-run research before the interview. */
+  researchStatus?: ResearchPrepStatus;
+  /** Type 6 only: latest fused Human State Engine estimate (debug panel). */
+  humanState?: import("@/lib/types").HumanState | null;
+  /** Type 6 only: the orchestrator's most recent action (debug panel). */
+  orchestratorAction?: {
+    kind: import("@/lib/types").OrchestratorActionKind;
+    reason: string;
+    at: number;
+  } | null;
+  /** Type 6 only: whether the LiveKit turn detector signal is live. */
+  livekitTurnDetectorActive?: boolean;
+  /** Type 6 only: meaning-depth axis (depth ladder + brain-reported signals). */
+  meaning?: {
+    depth: import("@/lib/meaning-engine").InterviewDepth;
+    intent: import("@/lib/meaning-engine").FollowUpIntent;
+    signals: import("@/lib/interview-brain").MeaningSignals;
+  } | null;
 }
 
 export interface ConnectOptions {
@@ -76,6 +100,16 @@ export interface ConnectOptions {
   inworldVadEagerness?: InworldRealtimeVadEagerness;
   turnDetectionMode?: RealtimeTurnDetectionMode;
   vadEagerness?: RealtimeVadEagerness;
+  url?: string;
+  ttsProvider?: NaturalVoiceTtsProvider;
+  /** Reasoning brain model for Type 5 (model comparison demos). */
+  brainModel?: NaturalVoiceBrainModel;
+  /**
+   * Natural-voice session variant. "type5" is the default Type 5 behavior;
+   * "type6" enables the Human State Engine + Response Orchestrator turn-taking
+   * and the LiveKit turn detector signal. Only read by the natural-voice hook.
+   */
+  variant?: "type5" | "type6";
 }
 
 export interface RealtimeSessionActions {
@@ -85,6 +119,17 @@ export interface RealtimeSessionActions {
   getMediaStream: () => MediaStream | null;
   mute: (muted: boolean) => void;
   isMuted: () => boolean;
+  /**
+   * Pre-run company research so the interview can start instantly once it
+   * completes (Type 5 only). connect() reuses the prepared result.
+   */
+  prepareResearch?: (url?: string) => Promise<void>;
+  /**
+   * Feed externally-computed human signals (currently the fused emotion from
+   * the UI audio-analysis layer) into the Human State Engine (Type 6 only).
+   * No-op for providers that do not run the HSE.
+   */
+  pushHumanSignals?: (signals: { emotion?: EmotionState | null }) => void;
 }
 
 type RealtimeSessionType =
@@ -282,7 +327,7 @@ export function useRealtimeSession(): [
         ] = await Promise.all([
           import("@openai/agents/realtime"),
           import("@/lib/agents"),
-          navigator.mediaDevices.getUserMedia(buildMicrophoneConstraints()),
+          requestMicrophoneStream(),
         ]);
         const voice = normalizeRealtimeVoice(
           options?.voice ?? DEFAULT_REALTIME_VOICE

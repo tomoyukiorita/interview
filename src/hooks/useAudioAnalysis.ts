@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, useEffect } from "react";
+import { PitchDetector } from "pitchy";
 import type { AudioFeatures, SpeechAudioMetrics } from "@/lib/types";
 
 const BUFFER_SIZE = 2048;
@@ -89,8 +90,14 @@ function computeMetricsFromSamples(
 }
 
 const PITCH_RMS_THRESHOLD = 0.002;
-const PITCH_MIN_HZ = 50;
-const PITCH_MAX_HZ = 600;
+const PITCH_MIN_HZ = 70;
+const PITCH_MAX_HZ = 450;
+const PITCH_MIN_CLARITY = 0.85;
+
+// pitchy's PitchDetector (McLeod Pitch Method) is allocation-heavy to build,
+// so reuse one instance per input length across analysis frames.
+let pitchDetector: PitchDetector<Float32Array> | null = null;
+let pitchDetectorSize = 0;
 
 function detectPitch(
   analyserNode: AnalyserNode,
@@ -107,54 +114,19 @@ function detectPitch(
   rms = Math.sqrt(rms / bufferLength);
   if (rms < PITCH_RMS_THRESHOLD) return null;
 
-  // Autocorrelation-based pitch detection.
-  // Limit lag search to the frequency range we care about.
-  const minLag = Math.floor(sampleRate / PITCH_MAX_HZ);
-  const maxLag = Math.ceil(sampleRate / PITCH_MIN_HZ);
-  const searchEnd = Math.min(maxLag + 1, bufferLength);
-
-  const correlations = new Float32Array(searchEnd);
-  for (let lag = minLag; lag < searchEnd; lag++) {
-    let sum = 0;
-    for (let i = 0; i < bufferLength - lag; i++) {
-      sum += buffer[i] * buffer[i + lag];
-    }
-    correlations[lag] = sum;
+  if (!pitchDetector || pitchDetectorSize !== bufferLength) {
+    pitchDetector = PitchDetector.forFloat32Array(bufferLength);
+    pitchDetectorSize = bufferLength;
   }
-
-  // Normalize by the autocorrelation at lag 0
-  let r0 = 0;
-  for (let i = 0; i < bufferLength; i++) {
-    r0 += buffer[i] * buffer[i];
+  const [pitch, clarity] = pitchDetector.findPitch(buffer, sampleRate);
+  if (
+    clarity < PITCH_MIN_CLARITY ||
+    pitch < PITCH_MIN_HZ ||
+    pitch > PITCH_MAX_HZ
+  ) {
+    return null;
   }
-  if (r0 === 0) return null;
-
-  let maxCorr = -1;
-  let maxLagIdx = -1;
-  for (let lag = minLag; lag < searchEnd; lag++) {
-    const normalized = correlations[lag] / r0;
-    if (normalized > maxCorr) {
-      maxCorr = normalized;
-      maxLagIdx = lag;
-    }
-  }
-
-  // Require at least 0.3 normalized correlation to accept as periodic signal
-  if (maxLagIdx === -1 || maxCorr < 0.3) return null;
-
-  // Parabolic interpolation for sub-sample accuracy
-  if (maxLagIdx > minLag && maxLagIdx < searchEnd - 1) {
-    const prev = correlations[maxLagIdx - 1] / r0;
-    const curr = maxCorr;
-    const next = correlations[maxLagIdx + 1] / r0;
-    const shift = (prev - next) / (2 * (prev - 2 * curr + next));
-    if (Math.abs(shift) < 1) {
-      const refinedLag = maxLagIdx + shift;
-      return sampleRate / refinedLag;
-    }
-  }
-
-  return sampleRate / maxLagIdx;
+  return pitch;
 }
 
 export function useAudioAnalysis(): [
