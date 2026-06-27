@@ -406,11 +406,19 @@ async function connectLiveKitTurnDetector(
     await room.connect(url, token);
     const track = micStream.getAudioTracks()[0];
     if (track) {
+      // Publish a CLONE, never the shared mic track. The same MediaStreamTrack
+      // also feeds the energy analyzer and the OpenAI transcription input; if we
+      // published it directly, room.disconnect() (worker OFF toggle, network
+      // drop) would stop the shared track by default and silence the mic for the
+      // whole session (energy 0.000, no speech detected). A clone is owned by
+      // LiveKit and can be stopped independently without harming the original.
+      //
       // Must tag the source as Microphone: the turn-detector worker's
       // AgentSession only accepts SOURCE_MICROPHONE tracks. Publishing a raw
       // MediaStreamTrack defaults to SOURCE_UNKNOWN, which the worker ignores
       // (so no user_state_changed → no end-of-turn ever reaches the client).
-      await room.localParticipant.publishTrack(track, {
+      const clone = track.clone();
+      await room.localParticipant.publishTrack(clone, {
         source: Track.Source.Microphone,
         name: "microphone",
       });
