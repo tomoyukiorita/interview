@@ -13,6 +13,10 @@ interface HumanStatePanelProps {
     at: number;
   } | null;
   livekitActive?: boolean;
+  /** Demo toggle state: whether the LiveKit worker connection is enabled. */
+  liveKitEnabled?: boolean;
+  /** Flip the LiveKit worker connection on/off (Type 6 demo control). */
+  onToggleLiveKit?: (enabled: boolean) => void;
   meaning?: {
     depth: InterviewDepth;
     intent: FollowUpIntent;
@@ -105,6 +109,8 @@ export function HumanStatePanel({
   humanState,
   action,
   livekitActive,
+  liveKitEnabled,
+  onToggleLiveKit,
   meaning,
   className,
 }: HumanStatePanelProps) {
@@ -135,6 +141,21 @@ export function HumanStatePanel({
           Human State Engine
         </h3>
         <div className="flex items-center gap-2">
+          {onToggleLiveKit && (
+            <button
+              type="button"
+              onClick={() => onToggleLiveKit(!liveKitEnabled)}
+              title="LiveKitターン検出ワーカーのオン/オフ（違いを比較）"
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors",
+                liveKitEnabled
+                  ? "bg-accent/10 text-accent hover:bg-accent/20"
+                  : "bg-muted text-muted-foreground hover:bg-muted/70"
+              )}
+            >
+              ワーカー {liveKitEnabled ? "ON" : "OFF"}
+            </button>
+          )}
           <span
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",

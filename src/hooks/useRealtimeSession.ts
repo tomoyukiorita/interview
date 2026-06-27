@@ -130,6 +130,13 @@ export interface RealtimeSessionActions {
    * No-op for providers that do not run the HSE.
    */
   pushHumanSignals?: (signals: { emotion?: EmotionState | null }) => void;
+  /**
+   * Toggle the LiveKit turn-detector worker connection at runtime (Type 6
+   * only). Lets the demo compare full-quality turn-taking against the
+   * VAD+audio degradation live, without restarting the interview. No-op for
+   * providers that do not use the LiveKit turn detector.
+   */
+  setLiveKitTurnDetectorEnabled?: (enabled: boolean) => void;
 }
 
 type RealtimeSessionType =

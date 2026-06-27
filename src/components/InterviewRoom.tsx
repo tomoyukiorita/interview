@@ -86,6 +86,8 @@ export function InterviewRoom({
     Record<string, SpeechAudioMetrics>
   >({});
   const [emotionTimeline, setEmotionTimeline] = useState<EmotionState[]>([]);
+  // Type 6 demo: whether the LiveKit turn-detector worker is enabled.
+  const [liveKitEnabled, setLiveKitEnabled] = useState(true);
   const processedMetricsRef = useRef<Set<string>>(new Set());
   const isOnlineSupport = mode === "online_support";
   const showEmotion = mode !== undefined;
@@ -155,6 +157,15 @@ export function InterviewRoom({
   }, [session.transcript, analysisActions, startTime]);
 
   const pushHumanSignals = sessionActions.pushHumanSignals;
+  const setLiveKitTurnDetectorEnabled =
+    sessionActions.setLiveKitTurnDetectorEnabled;
+  const handleToggleLiveKit = useCallback(
+    (enabled: boolean) => {
+      setLiveKitEnabled(enabled);
+      setLiveKitTurnDetectorEnabled?.(enabled);
+    },
+    [setLiveKitTurnDetectorEnabled]
+  );
   const handleEmotionChange = useCallback(
     (emotion: EmotionState) => {
       setEmotionTimeline((prev) => [...prev, emotion]);
@@ -528,6 +539,8 @@ export function InterviewRoom({
                 humanState={session.humanState}
                 action={session.orchestratorAction}
                 livekitActive={session.livekitTurnDetectorActive}
+                liveKitEnabled={liveKitEnabled}
+                onToggleLiveKit={handleToggleLiveKit}
                 meaning={session.meaning}
               />
             </div>

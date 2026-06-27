@@ -753,6 +753,10 @@ export function useNaturalVoiceRealtimeSession(): [
   // The connected LiveKit room (Type 6, when configured). Typed loosely to keep
   // livekit-client a dynamic import that never loads for other providers.
   const livekitRoomRef = useRef<{ disconnect: () => void } | null>(null);
+  // Type 6 demo switch: when false, the LiveKit turn detector is not connected
+  // (forced VAD+audio degradation) so the difference can be felt live. Toggled
+  // at runtime via setLiveKitTurnDetectorEnabled.
+  const liveKitEnabledRef = useRef(true);
   // Mirror of state.isSpeaking for synchronous reads inside the HSE tick.
   const aiSpeakingRef = useRef(false);
   // Wall-clock start of the current wait (set when an ASR segment arrives).
@@ -1034,9 +1038,10 @@ export function useNaturalVoiceRealtimeSession(): [
         mediaStreamRef.current = micStream;
         micLevelMonitorRef.current?.dispose();
         micLevelMonitorRef.current = new MicLevelMonitor(micStream);
-        // Type 6: feed the LiveKit turn detector if configured. Fire-and-forget
-        // so a missing/slow worker never blocks the interview from starting.
-        if (variantRef.current === "type6") {
+        // Type 6: feed the LiveKit turn detector if configured (and not disabled
+        // via the demo toggle). Fire-and-forget so a missing/slow worker never
+        // blocks the interview from starting.
+        if (variantRef.current === "type6" && liveKitEnabledRef.current) {
           void connectLiveKitTurnDetector(micStream, (value) => {
             livekitEotRef.current = { value, at: Date.now() };
           }).then((room) => {
@@ -2493,6 +2498,30 @@ export function useNaturalVoiceRealtimeSession(): [
     []
   );
 
+  // Type 6 demo control: connect/disconnect the LiveKit turn detector live so
+  // the difference between full-quality turn-taking and the VAD+audio
+  // degradation can be felt without restarting the interview. Disabling drops
+  // the room and clears the stale signal so the HSE falls back immediately;
+  // enabling reconnects using the active mic stream.
+  const setLiveKitTurnDetectorEnabled = useCallback((enabled: boolean) => {
+    liveKitEnabledRef.current = enabled;
+    if (!enabled) {
+      livekitRoomRef.current?.disconnect();
+      livekitRoomRef.current = null;
+      livekitEotRef.current = null;
+      setState((prev) => ({ ...prev, livekitTurnDetectorActive: false }));
+      return;
+    }
+    if (variantRef.current !== "type6") return;
+    const micStream = mediaStreamRef.current;
+    if (!micStream || livekitRoomRef.current) return;
+    void connectLiveKitTurnDetector(micStream, (value) => {
+      livekitEotRef.current = { value, at: Date.now() };
+    }).then((room) => {
+      livekitRoomRef.current = room;
+    });
+  }, []);
+
   return [
     state,
     {
@@ -2504,6 +2533,7 @@ export function useNaturalVoiceRealtimeSession(): [
       isMuted,
       prepareResearch,
       pushHumanSignals,
+      setLiveKitTurnDetectorEnabled,
     },
   ];
 }
