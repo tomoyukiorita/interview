@@ -1848,6 +1848,21 @@ export function useNaturalVoiceRealtimeSession(): [
             const finalText = scrubNamePlaceholders(
               scrubBrainProperNouns(full.trim())
             );
+            // Generation-truncation diagnostic: a short committed question with
+            // discarded chars means a guard (single-turn / fabrication) trimmed
+            // the real question — not a Fish TTS dropout (which leaves the text
+            // intact). Surfaces the guard-trim case so a truncated bubble can be
+            // told apart from an audio gap.
+            if (isType6) {
+              console.debug(
+                `[t6-gen] committed ${finalText.length} chars (finished=${finished}, discarded=${discardedSpeechChars})` +
+                  (discardedSpeechChars > 0
+                    ? ` | guard trimmed — possible truncation, tail="${finalText.slice(
+                        -40
+                      )}"`
+                    : "")
+              );
+            }
             if (!finalText) return;
             conversationRef.current.push({
               role: "interviewer",
@@ -2059,7 +2074,21 @@ export function useNaturalVoiceRealtimeSession(): [
               );
               if (released) completeEmission();
             } catch (error) {
-              if ((error as Error)?.name === "AbortError") return;
+              if ((error as Error)?.name === "AbortError") {
+                // Barge-in / supersede aborted generation mid-stream. If we had
+                // already emitted some speech, the visible bubble is left as a
+                // truncated fragment — log it so this is distinguishable from a
+                // guard trim or a Fish TTS dropout.
+                const partial = full.trim();
+                if (isType6 && partial.length > 0) {
+                  console.debug(
+                    `[t6-gen] generation aborted mid-stream (${partial.length} chars so far, released=${released}), tail="${partial.slice(
+                      -40
+                    )}"`
+                  );
+                }
+                return;
+              }
               if (myGeneration !== generationRef.current) return;
               console.warn("[Type5 Natural] brain turn failed", error);
             }
