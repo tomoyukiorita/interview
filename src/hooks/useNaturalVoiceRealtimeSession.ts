@@ -196,6 +196,20 @@ const ROLE_PLAY_EXCESS_ABORT_CHARS = 24;
 // playback, and re-runs the brain on the merged answer.
 const LATE_CONTINUATION_WINDOW_MS = 4000;
 
+// Type 6 only. For story-like answers (multi-segment or long), hold the first
+// TTS audio this long after the turn is released. Storytellers often finish a
+// grammatically complete sentence, pause, then resume with a connective
+// ("そこで…/そこから…"); the turn detector commits end-of-turn on that pause and
+// releases prematurely. During this silent hold the mic is still live, so a
+// resume fires speech_started → cancelCurrentSpeech (or a late ASR continuation
+// retracts the turn) before any audio plays, converting an audible cut-in into
+// a silent retraction. Synthesis runs during the hold, so the added latency is
+// at most this value and only on long answers.
+const STORY_PRESPEECH_HOLD_MS = 800;
+// A single-segment answer counts as story-like for the hold once it is at least
+// this long (mirrors the orchestrator's storyAnswerMinChars).
+const STORY_PRESPEECH_HOLD_MIN_CHARS = 80;
+
 // Base hint so the transcription model keeps proper nouns / jargon intact
 // instead of collapsing them into common words (e.g. "RAG" → "ラグ" → "遅れ").
 // The interviewee's industry varies, so domain terms are derived per-session
@@ -1878,6 +1892,12 @@ export function useNaturalVoiceRealtimeSession(): [
               );
             }
             brainClockRef.current = advance.state;
+            // Decide BEFORE resetting segment tracking whether this answer is
+            // story-like and should get a pre-speech hold (see below).
+            const storyHold =
+              isType6 &&
+              (segmentCountRef.current >= 2 ||
+                intervieweeText.trim().length >= STORY_PRESPEECH_HOLD_MIN_CHARS);
             // The pending turn is committed; reset segment tracking for the next.
             segmentCountRef.current = 0;
             lastSegmentAtRef.current = 0;
@@ -1920,6 +1940,20 @@ export function useNaturalVoiceRealtimeSession(): [
               clockBefore,
             };
             if (full) updateUi();
+            // Story-mode pre-speech hold: delay the first audio so a late
+            // continuation (speech_started or ASR) can retract this turn before
+            // any sound plays. The chunk play steps already bail on a generation
+            // bump (from cancelCurrentSpeech), so a hold that is cancelled mid-way
+            // simply never emits audio. Prefetch already kicked off, so synthesis
+            // overlaps the hold.
+            if (storyHold) {
+              ttsChainRef.current = ttsChainRef.current.then(
+                () =>
+                  new Promise<void>((resolve) => {
+                    setTimeout(resolve, STORY_PRESPEECH_HOLD_MS);
+                  })
+              );
+            }
             for (const item of prepared) {
               queueTtsChunk(item.text, item.response ?? undefined);
             }
