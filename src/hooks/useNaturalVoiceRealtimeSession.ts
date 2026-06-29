@@ -2011,10 +2011,15 @@ export function useNaturalVoiceRealtimeSession(): [
                   // better question selection. The API only applies this to
                   // OpenAI reasoning models; other providers ignore it.
                   openAiReasoningEffort: isType6 ? "medium" : undefined,
-                  // Anthropic/Fable/Claude models such as Opus 4.8 stay on low
-                  // effort for lower latency. The API only applies this field
-                  // to Anthropic-compatible models.
-                  anthropicEffort: isType6 ? "low" : undefined,
+                  // Anthropic/Fable/Claude models such as Opus 4.8 run at medium
+                  // effort in Type 6: low effort let Opus's dialogue-continuation
+                  // prior override the "one interviewer turn only" constraint, so
+                  // it role-played the whole exchange (fake interviewee lines,
+                  // host meta, "user:"/"assistant:" labels). Medium gives enough
+                  // deliberate constraint-checking to stop at --- after one turn,
+                  // at a small latency cost. The API only applies this field to
+                  // Anthropic-compatible models.
+                  anthropicEffort: isType6 ? "medium" : undefined,
                 }),
               });
               if (!res.ok || !res.body) {
