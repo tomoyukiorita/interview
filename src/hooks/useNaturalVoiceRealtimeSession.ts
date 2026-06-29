@@ -650,6 +650,7 @@ export function useNaturalVoiceRealtimeSession(): [
     goAwayTimeLeft: null,
     hasResumableSession: false,
     researchStatus: "idle",
+    interruptions: { count: 0 },
   });
 
   const sessionRef = useRef<RealtimeSessionType | null>(null);
@@ -732,6 +733,19 @@ export function useNaturalVoiceRealtimeSession(): [
     turnId: string;
     clockBefore: InterviewClockState;
   } | null>(null);
+  // Type 6 interruption diagnostics: every time a released AI question is
+  // retracted because the interviewee kept talking (a confirmed premature
+  // release / "the AI cut in"), we record it here so the debug panel and
+  // console can surface what the transcript alone hides.
+  const interruptionEventsRef = useRef<
+    Array<{
+      at: number;
+      kind: "barge-in-retracted" | "suspected-premature";
+      msAfterRelease: number;
+      retractedText: string;
+      intervieweeTail: string;
+    }>
+  >([]);
   const ttsChainRef = useRef(Promise.resolve());
   const queuedTtsTextsRef = useRef<string[]>([]);
   const generationRef = useRef(0);
@@ -885,7 +899,9 @@ export function useNaturalVoiceRealtimeSession(): [
         isConnecting: true,
         error: null,
         mode: "auto",
+        interruptions: { count: 0 },
       }));
+      interruptionEventsRef.current = [];
       processedItemIds.current.clear();
       transcriptSnapshotRef.current = [];
       coalescerRef.current = createAssistantTurnCoalescer();
@@ -1876,6 +1892,21 @@ export function useNaturalVoiceRealtimeSession(): [
                 meaning: { ...meaningRef.current },
               }));
             }
+            // Suspected (not confirmed) premature release: the turn was let go
+            // on a grammatically incomplete answer. Logged for diagnosis only —
+            // unlike the confirmed barge-in retraction, this is heuristic and is
+            // intentionally NOT counted in the panel to keep that signal clean.
+            if (
+              isType6 &&
+              intervieweeText.trim().length > 0 &&
+              endsMidThought(intervieweeText)
+            ) {
+              console.debug(
+                `[t6-interrupt] suspected-premature: released on incomplete answer | tail="${intervieweeText
+                  .trim()
+                  .slice(-40)}"`
+              );
+            }
             pendingIntervieweeTextRef.current = "";
             conversationRef.current.push({
               role: "interviewee",
@@ -2219,11 +2250,14 @@ export function useNaturalVoiceRealtimeSession(): [
                 Date.now() - lastReleased.releasedAt <
                   LATE_CONTINUATION_WINDOW_MS)
             ) {
+              const msAfterRelease = Date.now() - lastReleased.releasedAt;
               lastReleasedTurnRef.current = null;
               cancelCurrentSpeech();
               brainClockRef.current = lastReleased.clockBefore;
               const conversation = conversationRef.current;
+              let retractedText = "";
               if (conversation.at(-1)?.role === "interviewer") {
+                retractedText = conversation.at(-1)?.text ?? "";
                 conversation.pop();
               }
               if (
@@ -2232,16 +2266,34 @@ export function useNaturalVoiceRealtimeSession(): [
               ) {
                 conversation.pop();
               }
+              // Record this as a confirmed interruption: the AI was voiced (or
+              // about to be) but the interviewee was still talking, so the turn
+              // was premature. Surface it loudly (warn shows at default console
+              // level) and feed the debug panel via state.
+              const event = {
+                at: Date.now(),
+                kind: "barge-in-retracted" as const,
+                msAfterRelease,
+                retractedText,
+                intervieweeTail: transcript,
+              };
+              interruptionEventsRef.current.push(event);
+              console.warn(
+                `[t6-interrupt] barge-in: AI question retracted +${msAfterRelease}ms after release` +
+                  ` (total ${interruptionEventsRef.current.length}) | continuation="${transcript}"` +
+                  ` | retracted="${retractedText}"`
+              );
+              const interruptionCount = interruptionEventsRef.current.length;
               setState((prev) => ({
                 ...prev,
                 transcript: prev.transcript.filter(
                   (entry) => entry.id !== lastReleased.turnId
                 ),
+                interruptions: {
+                  count: interruptionCount,
+                  last: { msAfterRelease, at: event.at },
+                },
               }));
-              console.debug(
-                "[t5-latency] late continuation: retracted stale question",
-                lastReleased.turnId
-              );
               pendingIntervieweeTextRef.current = lastReleased.intervieweeText;
             }
             pendingIntervieweeTextRef.current = [

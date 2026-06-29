@@ -88,6 +88,15 @@ export interface RealtimeSessionState {
     intent: import("@/lib/meaning-engine").FollowUpIntent;
     signals: import("@/lib/interview-brain").MeaningSignals;
   } | null;
+  /**
+   * Type 6 only: interruption diagnostics. Counts confirmed premature releases
+   * (an AI question retracted because the interviewee kept talking) so the debug
+   * panel can surface "the AI cut in" events that the transcript alone hides.
+   */
+  interruptions?: {
+    count: number;
+    last?: { msAfterRelease: number; at: number };
+  };
 }
 
 export interface ConnectOptions {

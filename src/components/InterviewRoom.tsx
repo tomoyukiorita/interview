@@ -542,6 +542,7 @@ export function InterviewRoom({
                 liveKitEnabled={liveKitEnabled}
                 onToggleLiveKit={handleToggleLiveKit}
                 meaning={session.meaning}
+                interruptions={session.interruptions}
               />
             </div>
           )}

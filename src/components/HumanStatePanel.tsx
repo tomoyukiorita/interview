@@ -22,6 +22,11 @@ interface HumanStatePanelProps {
     intent: FollowUpIntent;
     signals: MeaningSignals;
   } | null;
+  /** Type 6 only: confirmed interruption diagnostics (AI cut-in count). */
+  interruptions?: {
+    count: number;
+    last?: { msAfterRelease: number; at: number };
+  };
   className?: string;
 }
 
@@ -112,6 +117,7 @@ export function HumanStatePanel({
   liveKitEnabled,
   onToggleLiveKit,
   meaning,
+  interruptions,
   className,
 }: HumanStatePanelProps) {
   const hs = humanState ?? null;
@@ -223,6 +229,25 @@ export function HumanStatePanel({
           理由: <span className="font-mono">{action?.reason ?? "—"}</span>
         </span>
       </div>
+
+      {interruptions && (
+        <div
+          className={cn(
+            "mt-2 flex items-center justify-between rounded-md px-2 py-1 text-[10px]",
+            interruptions.count > 0
+              ? "bg-warning/10 text-warning"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          <span className="uppercase tracking-wide">割り込み</span>
+          <span className="font-mono tabular-nums">
+            {interruptions.count} 件
+            {interruptions.last
+              ? `（最後: 解放+${interruptions.last.msAfterRelease}ms で撤回）`
+              : ""}
+          </span>
+        </div>
+      )}
 
       {meaning && (
         <div className="mt-3 border-t border-border pt-2">
