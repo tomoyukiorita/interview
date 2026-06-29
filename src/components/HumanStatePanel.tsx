@@ -25,7 +25,7 @@ interface HumanStatePanelProps {
   /** Type 6 only: confirmed interruption diagnostics (AI cut-in count). */
   interruptions?: {
     count: number;
-    last?: { msAfterRelease: number; at: number };
+    last?: { msAfterRelease: number; resumeGapMs?: number | null; at: number };
   };
   className?: string;
 }
@@ -243,7 +243,11 @@ export function HumanStatePanel({
           <span className="font-mono tabular-nums">
             {interruptions.count} 件
             {interruptions.last
-              ? `（最後: 解放+${interruptions.last.msAfterRelease}ms で撤回）`
+              ? `（最後: 沈黙${
+                  interruptions.last.resumeGapMs == null
+                    ? "?"
+                    : `${interruptions.last.resumeGapMs}ms`
+                }で再開／確定+${interruptions.last.msAfterRelease}ms）`
               : ""}
           </span>
         </div>

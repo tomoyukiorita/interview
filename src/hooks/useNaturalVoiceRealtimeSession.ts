@@ -2314,6 +2314,18 @@ export function useNaturalVoiceRealtimeSession(): [
                   LATE_CONTINUATION_WINDOW_MS)
             ) {
               const msAfterRelease = Date.now() - lastReleased.releasedAt;
+              // The TRUE silence the AI gave the speaker: release → the moment
+              // they actually resumed (VAD speech_started), NOT the ASR commit.
+              // msAfterRelease is inflated by however long the continuation
+              // sentence took to say; this gap is what tells us whether the AI
+              // released too eagerly (small/negative gap = it cut in almost
+              // immediately, or while they were still talking) vs the speaker
+              // truly paused (large gap).
+              const resumeStartedAt = speechWindowRef.current.startedAt;
+              const resumeGapMs =
+                resumeStartedAt > 0
+                  ? resumeStartedAt - lastReleased.releasedAt
+                  : null;
               lastReleasedTurnRef.current = null;
               cancelCurrentSpeech();
               brainClockRef.current = lastReleased.clockBefore;
@@ -2337,12 +2349,16 @@ export function useNaturalVoiceRealtimeSession(): [
                 at: Date.now(),
                 kind: "barge-in-retracted" as const,
                 msAfterRelease,
+                resumeGapMs,
                 retractedText,
                 intervieweeTail: transcript,
               };
               interruptionEventsRef.current.push(event);
               console.warn(
-                `[t6-interrupt] barge-in: AI question retracted +${msAfterRelease}ms after release` +
+                `[t6-interrupt] barge-in: AI question retracted | resumeGap=${
+                  resumeGapMs == null ? "?" : `${resumeGapMs}ms`
+                } (release→resume, the real silence)` +
+                  ` | commit=+${msAfterRelease}ms (incl. speaking time)` +
                   ` (total ${interruptionEventsRef.current.length}) | continuation="${transcript}"` +
                   ` | retracted="${retractedText}"`
               );
@@ -2354,7 +2370,7 @@ export function useNaturalVoiceRealtimeSession(): [
                 ),
                 interruptions: {
                   count: interruptionCount,
-                  last: { msAfterRelease, at: event.at },
+                  last: { msAfterRelease, resumeGapMs, at: event.at },
                 },
               }));
               pendingIntervieweeTextRef.current = lastReleased.intervieweeText;

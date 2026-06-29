@@ -95,7 +95,17 @@ export interface RealtimeSessionState {
    */
   interruptions?: {
     count: number;
-    last?: { msAfterRelease: number; at: number };
+    last?: {
+      msAfterRelease: number;
+      /**
+       * Release → the moment the interviewee actually resumed (VAD), i.e. the
+       * real silence the AI gave them. Distinct from msAfterRelease, which is
+       * inflated by how long the continuation sentence took to say. Null when no
+       * VAD start was recorded. Small/negative = the AI released too eagerly.
+       */
+      resumeGapMs?: number | null;
+      at: number;
+    };
   };
 }
 
